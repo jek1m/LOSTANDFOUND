@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 
-class SearchScreen extends StatefulWidget {
-  const SearchScreen({super.key});
+class LostSearchPage extends StatefulWidget {
+  const LostSearchPage({super.key});
 
   @override
-  State<SearchScreen> createState() => _SearchScreenState();
+  State<LostSearchPage> createState() => _LostSearchPageState();
 }
 
-class _SearchScreenState extends State<SearchScreen> {
+class _LostSearchPageState extends State<LostSearchPage> {
   final TextEditingController keywordController = TextEditingController();
   final TextEditingController detailRegionController = TextEditingController();
 
