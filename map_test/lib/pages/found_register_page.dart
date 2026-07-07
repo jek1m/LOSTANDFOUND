@@ -7,6 +7,7 @@ import 'package:kakao_map_plugin/kakao_map_plugin.dart';
 
 import '../models/found_item_registration.dart';
 import '../repositories/found_item_repository.dart';
+import '../services/found_item_ai_service.dart';
 
 enum _RegisterStep { photo, analyzing, confirm, detail, location, complete }
 
@@ -21,15 +22,19 @@ class FoundRegisterPage extends StatefulWidget {
   const FoundRegisterPage({
     super.key,
     this.repository = const MockFoundItemRepository(),
+    this.aiService,
   });
 
   final FoundItemRepository repository;
+  final FoundItemAiService? aiService;
 
   @override
   State<FoundRegisterPage> createState() => _FoundRegisterPageState();
 }
 
 class _FoundRegisterPageState extends State<FoundRegisterPage> {
+  FoundItemAiService get _aiService =>
+    widget.aiService ?? FoundItemAiService();
   final _imagePicker = ImagePicker();
   final _itemNameController = TextEditingController(
     text: '\uac80\uc815 \uac00\ubc29',
@@ -91,21 +96,55 @@ class _FoundRegisterPageState extends State<FoundRegisterPage> {
   }
 
   Future<void> _startAnalysis() async {
-    if (_selectedImage == null) {
+    final image = _selectedImage;
+
+    if (image == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-            '\uc0ac\uc9c4\uc744 \uba3c\uc800 \ub4f1\ub85d\ud574 \uc8fc\uc138\uc694.',
-          ),
+          content: Text('사진을 먼저 등록해 주세요.'),
         ),
       );
       return;
     }
 
     setState(() => _step = _RegisterStep.analyzing);
-    await Future<void>.delayed(const Duration(milliseconds: 1300));
-    if (mounted) {
-      setState(() => _step = _RegisterStep.confirm);
+
+    try {
+      final result = await _aiService.analyzeImage(image);
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        if (result.itemName.trim().isNotEmpty) {
+          _itemNameController.text = result.itemName.trim();
+        }
+
+        if (_categories.contains(result.category.trim())) {
+          _selectedCategory = result.category.trim();
+        } else {
+          _selectedCategory = '기타';
+        }
+
+        if (result.description.trim().isNotEmpty) {
+         _descriptionController.text = result.description.trim();
+        }
+
+        _step = _RegisterStep.confirm;
+      });
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() => _step = _RegisterStep.photo);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('AI 분석 중 오류가 발생했습니다: $e'),
+        ),
+      );
     }
   }
 
