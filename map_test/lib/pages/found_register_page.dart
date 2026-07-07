@@ -71,12 +71,26 @@ class _FoundRegisterPageState extends State<FoundRegisterPage> {
   final _descriptionController = TextEditingController();
 
   final List<String> _categories = const [
+    '\uc804\uccb4',
     '\uac00\ubc29',
-    '\uc9c0\uac11/\uce74\ub4dc',
-    '\uc758\ub958/\uc7a1\ud654',
+    '\uadc0\uae08\uc18d',
+    '\ub3c4\uc11c\uc6a9\ud488',
+    '\uc11c\ub958',
+    '\uc0b0\uc5c5\uc6a9\ud488',
+    '\uc1fc\ud551\ubc31',
+    '\uc2a4\ud3ec\uce20\uc6a9\ud488',
+    '\uc545\uae30',
+    '\uc720\uac00\uc99d\uad8c',
+    '\uc758\ub958',
+    '\uc790\ub3d9\ucc28',
     '\uc804\uc790\uae30\uae30',
-    '\uc11c\ub958/\ucc45',
-    '\uae30\ud0c0',
+    '\uc9c0\uac11',
+    '\uc99d\uba85\uc11c',
+    '\ucef4\ud4e8\ud130',
+    '\uce74\ub4dc',
+    '\ud604\uae08',
+    '\ud734\ub300\ud3f0',
+    '\uae30\ud0c0\ubb3c\ud488',
   ];
   final List<String> _regions = const [
     '\uc11c\uc6b8',
