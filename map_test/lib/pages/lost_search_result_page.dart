@@ -29,6 +29,95 @@ class LostSearchResultPage extends StatefulWidget {
 
 class _LostSearchResultPageState extends State<LostSearchResultPage> {
   static const String collectionName = 'public_lost_items';
+  static const Map<String, List<String>> regionKeywords = {
+    '서울특별시': [
+      '서울',
+      '강남',
+      '강동',
+      '강북',
+      '강서',
+      '관악',
+      '광진',
+      '구로',
+      '금천',
+      '노원',
+      '도봉',
+      '동대문',
+      '동작',
+      '마포',
+      '서대문',
+      '서초',
+      '성동',
+      '성북',
+      '송파',
+      '양천',
+      '영등포',
+      '용산',
+      '은평',
+      '종로',
+      '중구',
+      '중랑',
+      '잠실',
+      '한강공원',
+      '여의도',
+      '홍대',
+      '신촌',
+      '명동',
+      '건대',
+      '뚝섬',
+      '반포',
+    ],
+    '강원도': ['강원', '춘천', '원주', '강릉', '동해', '태백', '속초', '삼척'],
+    '경기도': [
+      '경기',
+      '수원',
+      '성남',
+      '고양',
+      '용인',
+      '부천',
+      '안산',
+      '안양',
+      '남양주',
+      '화성',
+      '평택',
+      '의정부',
+      '파주',
+      '김포',
+      '광명',
+      '광주',
+      '군포',
+      '하남',
+      '오산',
+      '양주',
+      '이천',
+      '구리',
+      '안성',
+      '포천',
+      '의왕',
+      '양평',
+      '여주',
+      '동두천',
+      '과천',
+      '가평',
+      '연천',
+    ],
+    '경상남도': ['경남', '창원', '진주', '통영', '사천', '김해', '밀양', '거제', '양산'],
+    '경상북도': ['경북', '포항', '경주', '김천', '안동', '구미', '영주', '영천', '상주', '문경', '경산'],
+    '광주광역시': ['광주'],
+    '대구광역시': ['대구'],
+    '대전광역시': ['대전'],
+    '부산광역시': ['부산', '해운대', '서면', '광안리'],
+    '울산광역시': ['울산'],
+    '인천광역시': ['인천', '부평', '송도', '강화'],
+    '전라남도': ['전남', '목포', '여수', '순천', '나주', '광양'],
+    '전북특별자치도': ['전북', '전주', '군산', '익산', '정읍', '남원', '김제'],
+    '충청남도': ['충남', '천안', '공주', '보령', '아산', '서산', '논산', '계룡', '당진'],
+    '충청북도': ['충북', '청주', '충주', '제천'],
+    '제주특별자치도': ['제주', '서귀포'],
+    '세종특별자치시': ['세종'],
+    '해외': ['해외'],
+    '기타': ['기타'],
+  };
 
   LostSearchSortOption selectedSort = LostSearchSortOption.similarity;
   late final Future<List<LostItem>> itemsFuture = _loadItems();
@@ -231,7 +320,7 @@ class _LostSearchResultPageState extends State<LostSearchResultPage> {
       return false;
     }
 
-    if (filter.region != null && filter.region != item.region) {
+    if (filter.region != null && !_matchesRegion(item, filter.region!)) {
       return false;
     }
 
@@ -309,11 +398,27 @@ class _LostSearchResultPageState extends State<LostSearchResultPage> {
       score += 3;
     }
 
-    if (item.region != null && widget.filter.region == item.region) {
+    if (widget.filter.region != null &&
+        _matchesRegion(item, widget.filter.region!)) {
       score += 2;
     }
 
     return score;
+  }
+
+  bool _matchesRegion(LostItem item, String region) {
+    final String locationText = _normalizeText(
+      '${item.region ?? ''} ${item.detailRegion ?? ''}',
+    );
+    final List<String> keywords = regionKeywords[region] ?? [region];
+
+    return keywords.any((keyword) {
+      return locationText.contains(_normalizeText(keyword));
+    });
+  }
+
+  String _normalizeText(String text) {
+    return text.toLowerCase().replaceAll(RegExp(r'\s+'), '');
   }
 
   int _nullableDateCompare(DateTime? a, DateTime? b) {
