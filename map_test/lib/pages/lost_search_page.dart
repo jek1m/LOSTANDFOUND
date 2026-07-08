@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../models/lost_search_filter.dart';
+import '../widgets/date_range_bottom_sheet.dart';
+import 'lost_search_result_page.dart';
+
 class LostSearchPage extends StatefulWidget {
   const LostSearchPage({super.key});
 
@@ -11,7 +15,7 @@ class _LostSearchPageState extends State<LostSearchPage> {
   final TextEditingController keywordController = TextEditingController();
   final TextEditingController detailRegionController = TextEditingController();
 
-  String? selectedCategory;
+  final Set<String> selectedCategories = {};
   String selectedRegion = '선택';
   DateTimeRange? selectedDateRange;
 
@@ -69,15 +73,17 @@ class _LostSearchPageState extends State<LostSearchPage> {
   Future<void> pickDateRange() async {
     final DateTime now = DateTime.now();
 
-    final DateTimeRange? pickedRange = await showDateRangePicker(
+    final DateTimeRange? pickedRange = await showModalBottomSheet<DateTimeRange>(
       context: context,
-      firstDate: DateTime(2020),
-      lastDate: now,
-      initialDateRange: selectedDateRange,
-      helpText: '분실 일자 선택',
-      cancelText: '취소',
-      confirmText: '선택',
-      saveText: '적용',
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return DateRangeBottomSheet(
+          firstDate: DateTime(2020),
+          lastDate: DateTime(now.year, now.month, now.day),
+          initialDateRange: selectedDateRange,
+        );
+      },
     );
 
     if (pickedRange != null) {
@@ -91,27 +97,25 @@ class _LostSearchPageState extends State<LostSearchPage> {
     final String keyword = keywordController.text.trim();
     final String detailRegion = detailRegionController.text.trim();
 
-    final Map<String, dynamic> searchFilter = {
-      'category': selectedCategory,
-      'keyword': keyword.isEmpty ? null : keyword,
-      'startDate': selectedDateRange?.start,
-      'endDate': selectedDateRange?.end,
-      'region': selectedRegion == '선택' ? null : selectedRegion,
-      'detailRegion': detailRegion.isEmpty ? null : detailRegion,
-    };
+    final LostSearchFilter searchFilter = LostSearchFilter(
+      categories: selectedCategories.toList(),
+      keyword: keyword.isEmpty ? null : keyword,
+      dateRange: selectedDateRange,
+      region: selectedRegion == '선택' ? null : selectedRegion,
+      detailRegion: detailRegion.isEmpty ? null : detailRegion,
+    );
 
-    debugPrint('검색 필터: $searchFilter');
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('검색 조건이 저장되었습니다. '),
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => LostSearchResultPage(filter: searchFilter),
       ),
     );
   }
 
   void resetFilters() {
     setState(() {
-      selectedCategory = null;
+      selectedCategories.clear();
       selectedRegion = '선택';
       selectedDateRange = null;
       keywordController.clear();
@@ -141,8 +145,8 @@ class _LostSearchPageState extends State<LostSearchPage> {
     final String keyword = keywordController.text.trim();
     final String detailRegion = detailRegionController.text.trim();
 
-    if (selectedCategory != null) {
-      chips.add(_filterChip(selectedCategory!));
+    for (final String category in selectedCategories) {
+      chips.add(_filterChip(category));
     }
 
     if (keyword.isNotEmpty) {
@@ -202,11 +206,15 @@ class _LostSearchPageState extends State<LostSearchPage> {
                       icon: Icons.category_outlined,
                       title: '물품 분류',
                       hintText: '물품 분류를 선택하세요',
-                      selectedValue: selectedCategory,
+                      selectedValues: selectedCategories,
                       options: categories,
                       onSelected: (value) {
                         setState(() {
-                          selectedCategory = value;
+                          if (selectedCategories.contains(value)) {
+                            selectedCategories.remove(value);
+                          } else {
+                            selectedCategories.add(value);
+                          }
                         });
                       },
                     ),
@@ -273,7 +281,9 @@ class _LostSearchPageState extends State<LostSearchPage> {
                       icon: Icons.location_on_outlined,
                       title: '지역',
                       hintText: '지역을 선택하세요',
-                      selectedValue: selectedRegion == '선택' ? null : selectedRegion,
+                      selectedValues: selectedRegion == '선택'
+                          ? const <String>{}
+                          : {selectedRegion},
                       options: regions,
                       onSelected: (value) {
                         setState(() {
@@ -380,7 +390,7 @@ class _LostSearchPageState extends State<LostSearchPage> {
     required IconData icon,
     required String title,
     required String hintText,
-    required String? selectedValue,
+    required Set<String> selectedValues,
     required List<String> options,
     required void Function(String value) onSelected,
   }) {
@@ -398,9 +408,9 @@ class _LostSearchPageState extends State<LostSearchPage> {
             tilePadding: const EdgeInsets.symmetric(horizontal: 14),
             childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
             title: Text(
-              selectedValue ?? hintText,
+              selectedValues.isEmpty ? hintText : selectedValues.join(', '),
               style: TextStyle(
-                color: selectedValue == null
+                color: selectedValues.isEmpty
                     ? Colors.grey
                     : const Color(0xFF111827),
                 fontWeight: FontWeight.w500,
@@ -413,7 +423,7 @@ class _LostSearchPageState extends State<LostSearchPage> {
                   spacing: 8,
                   runSpacing: 8,
                   children: options.map((option) {
-                    final bool isSelected = selectedValue == option;
+                    final bool isSelected = selectedValues.contains(option);
 
                     return ChoiceChip(
                       label: Text(option),

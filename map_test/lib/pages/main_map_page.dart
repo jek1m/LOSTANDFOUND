@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:kakao_map_plugin/kakao_map_plugin.dart';
 
 import 'found_register_page.dart';
@@ -63,12 +64,14 @@ class _MainMapPageState extends State<MainMapPage> {
                   SizedBox(
                     width: double.infinity,
                     height: double.infinity,
-                    child: KakaoMap(
-                      center: center,
-                      onMapCreated: (controller) {
-                        mapController = controller;
-                      },
-                    ),
+                    child: kIsWeb
+                        ? const _WebMapPlaceholder()
+                        : KakaoMap(
+                            center: center,
+                            onMapCreated: (controller) {
+                              mapController = controller;
+                            },
+                          ),
                   ),
 
                   // 기능 연결 전 임시 마커 UI
@@ -192,6 +195,26 @@ class _MainMapPageState extends State<MainMapPage> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _WebMapPlaceholder extends StatelessWidget {
+  const _WebMapPlaceholder();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: const Color(0xFFEAF2FF),
+      child: const Center(
+        child: Text(
+          'Chrome에서는 지도를 임시 화면으로 표시합니다',
+          style: TextStyle(
+            color: Color(0xFF2563EB),
+            fontWeight: FontWeight.w700,
+          ),
         ),
       ),
     );
