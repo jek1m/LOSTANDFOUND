@@ -30,12 +30,19 @@ class LostItem {
 
     return LostItem(
       id: doc.id,
-      title: _string(data, ['title', 'name', 'itemName', 'lostName']) ?? '이름 없음',
-      category: _string(data, ['category', 'itemCategory']),
-      region: _string(data, ['region', 'city', 'area']),
-      detailRegion: _string(data, ['detailRegion', 'address', 'place']),
-      description: _string(data, ['description', 'memo', 'content']),
-      lostDate: _date(data, ['lostDate', 'date']),
+      title: _string(data, ['lstPrdtNm', 'title', 'name', 'itemName', 'lostName']) ??
+          '이름 없음',
+      category: _string(data, [
+        'majorCategory',
+        'minorCategory',
+        'prdtClNm',
+        'category',
+        'itemCategory',
+      ]),
+      region: _string(data, ['region', 'city', 'area', 'placeQuery']),
+      detailRegion: _string(data, ['lstPlace', 'detailRegion', 'address', 'place']),
+      description: _string(data, ['prdtClNm', 'description', 'memo', 'content']),
+      lostDate: _date(data, ['lstYmd', 'lostDate', 'date']),
       createdAt: _date(data, ['createdAt', 'registeredAt', 'updatedAt']),
       imageUrl: _string(data, ['imageUrl', 'photoUrl', 'thumbnailUrl']),
       distanceMeters: _double(data, ['distanceMeters', 'distance']),

@@ -28,7 +28,7 @@ class LostSearchResultPage extends StatefulWidget {
 }
 
 class _LostSearchResultPageState extends State<LostSearchResultPage> {
-  static const String collectionName = 'lost_items';
+  static const String collectionName = 'public_lost_items';
 
   LostSearchSortOption selectedSort = LostSearchSortOption.similarity;
   late final Future<List<LostItem>> itemsFuture = _loadItems();
