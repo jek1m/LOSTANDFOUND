@@ -1,8 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
-import '../models/lost_item.dart';
-import '../models/lost_search_filter.dart';
+import '../lost_models/lost_item.dart';
+import '../lost_models/lost_search_filter.dart';
 
 enum LostSearchSortOption {
   similarity('유사도순'),
@@ -66,6 +66,7 @@ class _LostSearchResultPageState extends State<LostSearchResultPage> {
       '건대',
       '뚝섬',
       '반포',
+      '김포공항',
     ],
     '강원도': ['강원', '춘천', '원주', '강릉', '동해', '태백', '속초', '삼척'],
     '경기도': [
@@ -117,6 +118,9 @@ class _LostSearchResultPageState extends State<LostSearchResultPage> {
     '세종특별자치시': ['세종'],
     '해외': ['해외'],
     '기타': ['기타'],
+  };
+  static const Map<String, List<String>> regionExcludeKeywords = {
+    '경기도': ['김포공항'],
   };
 
   LostSearchSortOption selectedSort = LostSearchSortOption.similarity;
@@ -410,6 +414,13 @@ class _LostSearchResultPageState extends State<LostSearchResultPage> {
     final String locationText = _normalizeText(
       '${item.region ?? ''} ${item.detailRegion ?? ''}',
     );
+    final List<String> excludeKeywords = regionExcludeKeywords[region] ?? const [];
+    if (excludeKeywords.any((keyword) {
+      return locationText.contains(_normalizeText(keyword));
+    })) {
+      return false;
+    }
+
     final List<String> keywords = regionKeywords[region] ?? [region];
 
     return keywords.any((keyword) {

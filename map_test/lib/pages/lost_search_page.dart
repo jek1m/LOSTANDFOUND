@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../models/lost_search_filter.dart';
+import '../lost_models/lost_search_filter.dart';
 import '../widgets/date_range_bottom_sheet.dart';
 import 'lost_search_result_page.dart';
 
