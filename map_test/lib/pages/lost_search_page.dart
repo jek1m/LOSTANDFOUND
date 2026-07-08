@@ -287,7 +287,7 @@ class _LostSearchPageState extends State<LostSearchPage> {
                       options: regions,
                       onSelected: (value) {
                         setState(() {
-                          selectedRegion = value;
+                          selectedRegion = selectedRegion == value ? '선택' : value;
                         });
                       },
                     ),
