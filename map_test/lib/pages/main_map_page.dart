@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:kakao_map_plugin/kakao_map_plugin.dart';
 
 import 'found_register_page.dart';
@@ -15,96 +14,16 @@ class MainMapPage extends StatefulWidget {
 class _MainMapPageState extends State<MainMapPage> {
   KakaoMapController? mapController;
 
-  LatLng? currentLocation;
-  bool isLoadingLocation = true;
-  String? locationMessage;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadCurrentLocation();
-  }
-
-  Future<void> _loadCurrentLocation() async {
-    setState(() {
-      isLoadingLocation = true;
-      locationMessage = null;
-    });
-
-    try {
-      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) {
-        _setLocationError('위치 서비스를 켜주세요');
-        return;
-      }
-
-      var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
-
-      if (permission == LocationPermission.denied) {
-        _setLocationError('위치 권한이 필요합니다');
-        return;
-      }
-
-      if (permission == LocationPermission.deniedForever) {
-        _setLocationError('설정에서 위치 권한을 허용해주세요');
-        return;
-      }
-
-      final position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-        ),
-      );
-      final latLng = LatLng(position.latitude, position.longitude);
-
-      if (!mounted) {
-        return;
-      }
-
-      setState(() {
-        currentLocation = latLng;
-        isLoadingLocation = false;
-        locationMessage = null;
-      });
-      _moveMap(latLng);
-    } catch (_) {
-      if (!mounted) {
-        return;
-      }
-
-      _setLocationError('현재 위치를 불러오지 못했습니다');
-    }
-  }
-
-  void _setLocationError(String message) {
-    if (!mounted) {
-      return;
-    }
-
-    setState(() {
-      currentLocation = null;
-      isLoadingLocation = false;
-      locationMessage = message;
-    });
-  }
-
-  void _moveMap(LatLng latLng) {
-    mapController?.setCenter(latLng);
-    mapController?.setLevel(3);
-  }
+  final LatLng center = LatLng(37.5665, 126.9780); // 임시 중심 좌표
 
   @override
   Widget build(BuildContext context) {
-    final location = currentLocation;
-
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
         child: Column(
           children: [
+            // 상단 제목 영역
             Container(
               width: double.infinity,
               padding: const EdgeInsets.only(top: 18, bottom: 14),
@@ -117,7 +36,7 @@ class _MainMapPageState extends State<MainMapPage> {
               child: const Column(
                 children: [
                   Text(
-                    '찾아드림',
+                    '앱이름',
                     style: TextStyle(
                       fontSize: 22,
                       fontWeight: FontWeight.w800,
@@ -127,83 +46,102 @@ class _MainMapPageState extends State<MainMapPage> {
                   SizedBox(height: 4),
                   Text(
                     '잃어버린 물건을 찾아드립니다',
-                    style: TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFF6B7280),
+                    ),
                   ),
                 ],
               ),
             ),
+
+            // 지도 영역
             Expanded(
               child: Stack(
                 children: [
-                  if (location == null)
-                    _LocationLoadingMap(
-                      isLoading: isLoadingLocation,
-                      message: locationMessage,
-                      onRetry: _loadCurrentLocation,
-                    )
-                  else
-                    SizedBox(
-                      width: double.infinity,
-                      height: double.infinity,
-                      child: KakaoMap(
-                        center: location,
-                        currentLevel: 3,
-                        onMapCreated: (controller) {
-                          mapController = controller;
-                          _moveMap(location);
-                        },
-                      ),
+                  // 실제 카카오맵
+                  SizedBox(
+                    width: double.infinity,
+                    height: double.infinity,
+                    child: KakaoMap(
+                      center: center,
+                      onMapCreated: (controller) {
+                        mapController = controller;
+                      },
                     ),
-                  if (location != null)
-                    Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 28,
-                            height: 28,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF2563EB),
-                              shape: BoxShape.circle,
-                              border: Border.all(color: Colors.white, width: 4),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.18),
-                                  blurRadius: 8,
-                                  offset: const Offset(0, 3),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(20),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.15),
-                                  blurRadius: 8,
-                                  offset: const Offset(0, 3),
-                                ),
-                              ],
-                            ),
-                            child: const Text(
-                              '현재 위치',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: Color(0xFF374151),
+                  ),
+
+                  // 기능 연결 전 임시 마커 UI
+                  const IgnorePointer(
+                    child: Stack(
+                      children: [
+                        MapPin(top: 85, left: 135, color: Color(0xFFEF4444)),
+                        MapPin(top: 120, left: 78, color: Color(0xFF14B8A6)),
+                        MapPin(top: 140, right: 105, color: Color(0xFFFF7A00)),
+                        MapPin(top: 180, left: 110, color: Color(0xFFFF9800)),
+                        MapPin(top: 205, right: 145, color: Color(0xFF374151)),
+                        MapPin(top: 240, left: 155, color: Color(0xFFFB7185)),
+                        MapPin(top: 260, right: 100, color: Color(0xFF8B5CF6)),
+                        MapPin(top: 315, left: 95, color: Color(0xFF10B981)),
+                        MapPin(top: 350, right: 80, color: Color(0xFF06B6D4)),
+                        MapPin(bottom: 135, left: 135, color: Color(0xFFE91E63)),
+                        MapPin(bottom: 90, right: 120, color: Color(0xFF9CA3AF)),
+                      ],
+                    ),
+                  ),
+
+                  // 현재 위치 표시
+                  Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 28,
+                          height: 28,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF2563EB),
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white, width: 4),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.18),
+                                blurRadius: 8,
+                                offset: const Offset(0, 3),
                               ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(20),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.15),
+                                blurRadius: 8,
+                                offset: const Offset(0, 3),
+                              ),
+                            ],
+                          ),
+                          child: const Text(
+                            '내 위치',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF374151),
                             ),
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
+                  ),
+
+                  // 하단 버튼 영역
                   Positioned(
                     left: 20,
                     right: 20,
@@ -241,8 +179,7 @@ class _MainMapPageState extends State<MainMapPage> {
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                  builder: (context) =>
-                                      const FoundRegisterPage(),
+                                  builder: (context) => const FoundRegisterPage(),
                                 ),
                               );
                             },
@@ -261,70 +198,53 @@ class _MainMapPageState extends State<MainMapPage> {
   }
 }
 
-class _LocationLoadingMap extends StatelessWidget {
-  const _LocationLoadingMap({
-    required this.isLoading,
-    required this.message,
-    required this.onRetry,
-  });
+// 지도 위 임시 위치 마커
+class MapPin extends StatelessWidget {
+  final double? top;
+  final double? left;
+  final double? right;
+  final double? bottom;
+  final Color color;
 
-  final bool isLoading;
-  final String? message;
-  final VoidCallback onRetry;
+  const MapPin({
+    super.key,
+    this.top,
+    this.left,
+    this.right,
+    this.bottom,
+    required this.color,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      height: double.infinity,
-      color: const Color(0xFFF8FAFC),
-      padding: const EdgeInsets.fromLTRB(28, 0, 28, 86),
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (isLoading)
-              const SizedBox(
-                width: 34,
-                height: 34,
-                child: CircularProgressIndicator(
-                  strokeWidth: 3,
-                  color: Color(0xFF2563EB),
-                ),
-              )
-            else
-              const Icon(
-                Icons.location_off,
-                color: Color(0xFFEF4444),
-                size: 38,
-              ),
-            const SizedBox(height: 14),
-            Text(
-              isLoading ? '현재 위치를 불러오는 중입니다' : message ?? '',
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Color(0xFF374151),
-                fontSize: 14,
-                height: 1.45,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            if (!isLoading) ...[
-              const SizedBox(height: 12),
-              OutlinedButton.icon(
-                onPressed: onRetry,
-                icon: const Icon(Icons.refresh, size: 18),
-                label: const Text('재시도'),
-              ),
-            ],
-          ],
-        ),
+    return Positioned(
+      top: top,
+      left: left,
+      right: right,
+      bottom: bottom,
+      child: Icon(
+        Icons.location_on,
+        size: 38,
+        color: color,
+        shadows: [
+          Shadow(
+            color: Colors.black.withOpacity(0.18),
+            blurRadius: 5,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
     );
   }
 }
 
+// 하단 메인 버튼
 class MainBottomButton extends StatelessWidget {
+  final String text;
+  final IconData icon;
+  final List<Color> colors;
+  final VoidCallback onTap;
+
   const MainBottomButton({
     super.key,
     required this.text,
@@ -332,11 +252,6 @@ class MainBottomButton extends StatelessWidget {
     required this.colors,
     required this.onTap,
   });
-
-  final String text;
-  final IconData icon;
-  final List<Color> colors;
-  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -348,7 +263,7 @@ class MainBottomButton extends StatelessWidget {
           borderRadius: BorderRadius.circular(14),
           boxShadow: [
             BoxShadow(
-              color: colors.last.withValues(alpha: 0.35),
+              color: colors.last.withOpacity(0.35),
               blurRadius: 12,
               offset: const Offset(0, 5),
             ),
@@ -364,15 +279,12 @@ class MainBottomButton extends StatelessWidget {
               children: [
                 Icon(icon, color: Colors.white, size: 22),
                 const SizedBox(width: 8),
-                Flexible(
-                  child: Text(
-                    text,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                    ),
+                Text(
+                  text,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
               ],
