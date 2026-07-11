@@ -12,16 +12,43 @@ import '../services/found_item_ai_service.dart';
 enum _RegisterStep { photo, analyzing, confirm, detail, location, complete }
 
 class _LocationSelection {
-  const _LocationSelection({required this.latLng, required this.label});
+  const _LocationSelection({
+    required this.latLng,
+    required this.label,
+    required this.sido,
+    required this.sigungu,
+    required this.eupmyeondong,
+  });
 
   final LatLng latLng;
   final String label;
+  final String sido;
+  final String sigungu;
+  final String eupmyeondong;
+}
+
+class _RegionSelection {
+  const _RegionSelection({
+    required this.sido,
+    required this.sigungu,
+    required this.eupmyeondong,
+  });
+
+  final String sido;
+  final String sigungu;
+  final String eupmyeondong;
+
+  static const empty = _RegionSelection(
+    sido: '',
+    sigungu: '',
+    eupmyeondong: '',
+  );
 }
 
 class FoundRegisterPage extends StatefulWidget {
   const FoundRegisterPage({
     super.key,
-    this.repository = const MockFoundItemRepository(),
+    this.repository = const FirebaseFoundItemRepository(),
     this.aiService,
   });
 
@@ -84,6 +111,9 @@ class _FoundRegisterPageState extends State<FoundRegisterPage> {
   bool _isSubmitting = false;
   String? _mapLocation;
   LatLng? _selectedLocationLatLng;
+  String _sido = '';
+  String _sigungu = '';
+  String _eupmyeondong = '';
   XFile? _selectedImage;
 
   @override
@@ -186,40 +216,48 @@ class _FoundRegisterPageState extends State<FoundRegisterPage> {
     setState(() => _isSubmitting = true);
 
     final foundPlace = _useMapLocation
-        ? (_mapLocation ??
-              '\uc9c0\ub3c4\uc5d0\uc11c \uc120\ud0dd\ud55c \uc704\uce58')
-        : '$_selectedRegion $_selectedDistrict';
+        ? (_mapLocation ?? '지도에서 선택한 위치')
+        : '${_normalizeSido(_selectedRegion)} $_selectedDistrict';
 
     final item = FoundItemRegistration(
       itemName: _itemNameController.text.trim(),
       category: _selectedCategory,
       foundAt: _foundDate,
       foundPlace: foundPlace,
-      storagePlace: foundPlace,
       description: _descriptionController.text.trim(),
-      reporterName: '\uc2b5\ub4dd\ubb3c \ub4f1\ub85d\uc790',
       contact: _contactController.text.trim(),
       password: _passwordController.text.trim(),
-      createdAt: DateTime.now(),
-      imagePath: _selectedImage?.path,
       latitude: _selectedLocationLatLng?.latitude,
       longitude: _selectedLocationLatLng?.longitude,
+      sido: _useMapLocation
+          ? _sido
+          : _normalizeSido(_selectedRegion),
+      sigungu: _useMapLocation ? _sigungu : _selectedDistrict,
+      eupmyeondong: _useMapLocation ? _eupmyeondong : '',
     );
 
     try {
-      await widget.repository.registerFoundItem(item);
+      final atcId = await widget.repository.registerFoundItem(
+        item,
+        image: _selectedImage,
+      );
+
+      debugPrint('습득물 등록 완료: $atcId');
+
       if (mounted) {
         setState(() => _step = _RegisterStep.complete);
       }
-    } catch (_) {
+    } catch (e, stackTrace) {
+      debugPrint('습득물 등록 실패: $e');
+      debugPrintStack(stackTrace: stackTrace);
+
       if (!mounted) {
         return;
       }
+
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            '\ub4f1\ub85d \uc911 \ubb38\uc81c\uac00 \ubc1c\uc0dd\ud588\uc2b5\ub2c8\ub2e4. \ub2e4\uc2dc \uc2dc\ub3c4\ud574 \uc8fc\uc138\uc694.',
-          ),
+        SnackBar(
+          content: Text('등록 중 문제가 발생했습니다: $e'),
         ),
       );
     } finally {
@@ -227,6 +265,22 @@ class _FoundRegisterPageState extends State<FoundRegisterPage> {
         setState(() => _isSubmitting = false);
       }
     }
+  }
+
+  String _normalizeSido(String value) {
+    const sidoMap = {
+      '서울': '서울특별시',
+      '경기': '경기도',
+      '인천': '인천광역시',
+      '강원': '강원특별자치도',
+      '충북': '충청북도',
+      '충남': '충청남도',
+      '전북': '전북특별자치도',
+      '전남': '전라남도',
+      '경북': '경상북도',
+    };
+
+    return sidoMap[value] ?? value;
   }
 
   bool get _canSubmit {
@@ -320,6 +374,9 @@ class _FoundRegisterPageState extends State<FoundRegisterPage> {
                 setState(() {
                   _selectedLocationLatLng = location.latLng;
                   _mapLocation = location.label;
+                  _sido = location.sido;
+                  _sigungu = location.sigungu;
+                  _eupmyeondong = location.eupmyeondong;
                   _step = _RegisterStep.detail;
                 });
               },
@@ -908,13 +965,59 @@ class _LocationStepState extends State<_LocationStep> {
         ? selectedCenter!
         : await controller.getCenter().catchError((_) => selectedCenter!);
     final label = await _resolveAddress(center);
+    final region = await _resolveRegion(center);
 
     if (!mounted) {
       return;
     }
 
     setState(() => _isResolvingAddress = false);
-    widget.onPickLocation(_LocationSelection(latLng: center, label: label));
+    widget.onPickLocation(
+      _LocationSelection(
+        latLng: center,
+        label: label,
+        sido: region.sido,
+        sigungu: region.sigungu,
+        eupmyeondong: region.eupmyeondong,
+      ),
+    );
+  }
+
+  Future<_RegionSelection> _resolveRegion(LatLng latLng) async {
+    final controller = _mapController;
+    if (controller == null) {
+      return _RegionSelection.empty;
+    }
+
+    try {
+      final response = await controller.coord2RegionCode(
+        Coord2RegionCodeRequest(
+          x: latLng.longitude,
+          y: latLng.latitude,
+        ),
+      );
+
+      Coord2RegionCode? selectedRegion;
+
+      for (final region in response.list) {
+        if (region.regionType == 'H') {
+          selectedRegion = region;
+          break;
+        }
+      }
+
+      if (selectedRegion == null && response.list.isNotEmpty) {
+        selectedRegion = response.list.first;
+      }
+
+      return _RegionSelection(
+        sido: selectedRegion?.region1DepthName?.trim() ?? '',
+        sigungu: selectedRegion?.region2DepthName?.trim() ?? '',
+        eupmyeondong: selectedRegion?.region3DepthName?.trim() ?? '',
+      );
+    } catch (_) {
+      return _RegionSelection.empty;
+    }
   }
 
   Future<String> _resolveAddress(LatLng latLng) async {
