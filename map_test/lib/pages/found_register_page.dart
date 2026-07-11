@@ -71,7 +71,6 @@ class _FoundRegisterPageState extends State<FoundRegisterPage> {
   final _descriptionController = TextEditingController();
 
   final List<String> _categories = const [
-    '\uc804\uccb4',
     '\uac00\ubc29',
     '\uadc0\uae08\uc18d',
     '\ub3c4\uc11c\uc6a9\ud488',
@@ -120,7 +119,7 @@ class _FoundRegisterPageState extends State<FoundRegisterPage> {
   String _selectedCategory = '\uac00\ubc29';
   String _selectedRegion = '\uc11c\uc6b8';
   String _selectedDistrict = '\uac15\ub0a8\uad6c';
-  DateTime _foundDate = DateTime(2026, 6, 12);
+  DateTime _foundDate = DateTime.now();
   bool _useMapLocation = true;
   bool _isSubmitting = false;
   String? _mapLocation;
@@ -168,7 +167,7 @@ class _FoundRegisterPageState extends State<FoundRegisterPage> {
         if (_categories.contains(result.category.trim())) {
           _selectedCategory = result.category.trim();
         } else {
-          _selectedCategory = '기타';
+          _selectedCategory = '기타물품';
         }
 
         if (result.description.trim().isNotEmpty) {
