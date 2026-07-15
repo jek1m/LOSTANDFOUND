@@ -140,7 +140,7 @@ class _DateRangeBottomSheetState extends State<DateRangeBottomSheet> {
       focusedDay: focusedDay,
       rangeStartDay: rangeStart,
       rangeEndDay: rangeEnd,
-      rangeSelectionMode: RangeSelectionMode.toggledOn,
+      rangeSelectionMode: RangeSelectionMode.disabled,
       calendarFormat: CalendarFormat.month,
       headerVisible: false,
       calendarBuilders: CalendarBuilders(dowBuilder: _dayOfWeekBuilder),
@@ -164,12 +164,8 @@ class _DateRangeBottomSheetState extends State<DateRangeBottomSheet> {
         ),
         outsideDaysVisible: false,
       ),
-      onRangeSelected: (start, end, focused) {
-        setState(() {
-          rangeStart = start;
-          rangeEnd = end;
-          focusedDay = focused;
-        });
+      onDaySelected: (selectedDay, focused) {
+        _selectDay(selectedDay, focused);
       },
       onPageChanged: (focused) {
         setState(() {
@@ -177,6 +173,26 @@ class _DateRangeBottomSheetState extends State<DateRangeBottomSheet> {
         });
       },
     );
+  }
+
+  void _selectDay(DateTime selectedDay, DateTime focused) {
+    setState(() {
+      focusedDay = focused;
+
+      if (rangeStart == null || rangeEnd != null) {
+        rangeStart = selectedDay;
+        rangeEnd = null;
+        return;
+      }
+
+      if (selectedDay.isBefore(rangeStart!)) {
+        rangeEnd = rangeStart;
+        rangeStart = selectedDay;
+        return;
+      }
+
+      rangeEnd = selectedDay;
+    });
   }
 
   Widget _actionButtons(BuildContext context) {

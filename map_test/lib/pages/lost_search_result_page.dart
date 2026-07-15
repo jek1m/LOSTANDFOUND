@@ -1,12 +1,17 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:kakao_map_plugin/kakao_map_plugin.dart';
 
 import '../lost_models/lost_item.dart';
 import '../lost_models/lost_search_filter.dart';
+import 'distance_reference_map_page.dart';
+
+enum _DistanceReferenceChoice { currentLocation, map }
 
 enum LostSearchSortOption {
   similarity('유사도순'),
-  distance('거리순'),
+  nearest('가까운순'),
   newest('최신순'),
   oldest('오래된순');
 
@@ -16,10 +21,7 @@ enum LostSearchSortOption {
 }
 
 class LostSearchResultPage extends StatefulWidget {
-  const LostSearchResultPage({
-    super.key,
-    required this.filter,
-  });
+  const LostSearchResultPage({super.key, required this.filter});
 
   final LostSearchFilter filter;
 
@@ -28,102 +30,11 @@ class LostSearchResultPage extends StatefulWidget {
 }
 
 class _LostSearchResultPageState extends State<LostSearchResultPage> {
-  static const String collectionName = 'public_lost_items';
-  static const Map<String, List<String>> regionKeywords = {
-    '서울특별시': [
-      '서울',
-      '강남',
-      '강동',
-      '강북',
-      '강서',
-      '관악',
-      '광진',
-      '구로',
-      '금천',
-      '노원',
-      '도봉',
-      '동대문',
-      '동작',
-      '마포',
-      '서대문',
-      '서초',
-      '성동',
-      '성북',
-      '송파',
-      '양천',
-      '영등포',
-      '용산',
-      '은평',
-      '종로',
-      '중구',
-      '중랑',
-      '잠실',
-      '한강공원',
-      '여의도',
-      '홍대',
-      '신촌',
-      '명동',
-      '건대',
-      '뚝섬',
-      '반포',
-      '김포공항',
-    ],
-    '강원도': ['강원', '춘천', '원주', '강릉', '동해', '태백', '속초', '삼척'],
-    '경기도': [
-      '경기',
-      '수원',
-      '성남',
-      '고양',
-      '용인',
-      '부천',
-      '안산',
-      '안양',
-      '남양주',
-      '화성',
-      '평택',
-      '의정부',
-      '파주',
-      '김포',
-      '광명',
-      '광주',
-      '군포',
-      '하남',
-      '오산',
-      '양주',
-      '이천',
-      '구리',
-      '안성',
-      '포천',
-      '의왕',
-      '양평',
-      '여주',
-      '동두천',
-      '과천',
-      '가평',
-      '연천',
-    ],
-    '경상남도': ['경남', '창원', '진주', '통영', '사천', '김해', '밀양', '거제', '양산'],
-    '경상북도': ['경북', '포항', '경주', '김천', '안동', '구미', '영주', '영천', '상주', '문경', '경산'],
-    '광주광역시': ['광주'],
-    '대구광역시': ['대구'],
-    '대전광역시': ['대전'],
-    '부산광역시': ['부산', '해운대', '서면', '광안리'],
-    '울산광역시': ['울산'],
-    '인천광역시': ['인천', '부평', '송도', '강화'],
-    '전라남도': ['전남', '목포', '여수', '순천', '나주', '광양'],
-    '전북특별자치도': ['전북', '전주', '군산', '익산', '정읍', '남원', '김제'],
-    '충청남도': ['충남', '천안', '공주', '보령', '아산', '서산', '논산', '계룡', '당진'],
-    '충청북도': ['충북', '청주', '충주', '제천'],
-    '제주특별자치도': ['제주', '서귀포'],
-    '세종특별자치시': ['세종'],
-    '해외': ['해외'],
-    '기타': ['기타'],
-  };
-  static const Map<String, List<String>> regionExcludeKeywords = {
-    '경기도': ['김포공항'],
-  };
+  static const String collectionName = 'found_items';
+  static final RegExp _searchSeparator = RegExp(r'[^0-9a-zA-Z가-힣]+');
 
   LostSearchSortOption selectedSort = LostSearchSortOption.similarity;
+  DistanceReference? _distanceReference;
   late final Future<List<LostItem>> itemsFuture = _loadItems();
 
   @override
@@ -169,12 +80,14 @@ class _LostSearchResultPageState extends State<LostSearchResultPage> {
                     : ListView.separated(
                         padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
                         itemCount: items.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 10),
+                        separatorBuilder: (_, _) => const SizedBox(height: 10),
                         itemBuilder: (context, index) {
                           return _LostItemCard(
                             item: items[index],
                             formatDate: _formatDate,
-                            formatDistance: _formatDistance,
+                            showDistance:
+                                selectedSort == LostSearchSortOption.nearest,
+                            distanceMeters: _distanceTo(items[index]),
                           );
                         },
                       ),
@@ -192,9 +105,7 @@ class _LostSearchResultPageState extends State<LostSearchResultPage> {
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
       decoration: const BoxDecoration(
         color: Colors.white,
-        border: Border(
-          bottom: BorderSide(color: Color(0xFFE5E7EB)),
-        ),
+        border: Border(bottom: BorderSide(color: Color(0xFFE5E7EB))),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -220,27 +131,188 @@ class _LostSearchResultPageState extends State<LostSearchResultPage> {
                     child: Text(option.label),
                   );
                 }).toList(),
-                onChanged: (option) {
+                onChanged: (option) async {
                   if (option == null) {
                     return;
                   }
 
-                  setState(() {
-                    selectedSort = option;
-                  });
+                  await _changeSort(option);
                 },
               ),
             ],
           ),
           const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: _filterChips(),
-          ),
+          Wrap(spacing: 8, runSpacing: 8, children: _filterChips()),
+          if (selectedSort == LostSearchSortOption.nearest &&
+              _distanceReference != null) ...[
+            const SizedBox(height: 8),
+            InkWell(
+              onTap: _chooseDistanceReference,
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.near_me_outlined,
+                      size: 16,
+                      color: Color(0xFF2563EB),
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        '기준: ${_distanceReference!.label}',
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xFF2563EB),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    const Text(
+                      '변경',
+                      style: TextStyle(color: Color(0xFF6B7280), fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
+  }
+
+  Future<void> _changeSort(LostSearchSortOption option) async {
+    if (option == LostSearchSortOption.nearest && _distanceReference == null) {
+      final selected = await _chooseDistanceReference();
+      if (!selected) {
+        return;
+      }
+    }
+
+    if (!mounted) {
+      return;
+    }
+    setState(() => selectedSort = option);
+  }
+
+  Future<bool> _chooseDistanceReference() async {
+    final choice = await showModalBottomSheet<_DistanceReferenceChoice>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                '거리 기준 위치',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                '검색 결과와의 거리를 계산할 기준을 선택해 주세요.',
+                style: TextStyle(color: Color(0xFF6B7280)),
+              ),
+              const SizedBox(height: 12),
+              ListTile(
+                leading: const Icon(Icons.my_location),
+                title: const Text('현재 위치 사용'),
+                subtitle: const Text('기기의 현재 위치를 기준으로 정렬합니다.'),
+                onTap: () => Navigator.pop(
+                  context,
+                  _DistanceReferenceChoice.currentLocation,
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.map_outlined),
+                title: const Text('지도에서 위치 선택'),
+                subtitle: const Text('원하는 장소를 직접 기준으로 지정합니다.'),
+                onTap: () =>
+                    Navigator.pop(context, _DistanceReferenceChoice.map),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (!mounted || choice == null) {
+      return false;
+    }
+
+    final DistanceReference? reference;
+    if (choice == _DistanceReferenceChoice.currentLocation) {
+      reference = await _currentLocationReference();
+    } else {
+      reference = await Navigator.push<DistanceReference>(
+        context,
+        MaterialPageRoute(
+          builder: (context) => DistanceReferenceMapPage(
+            initialLocation: _distanceReference?.location,
+          ),
+        ),
+      );
+    }
+
+    if (!mounted || reference == null) {
+      return false;
+    }
+
+    setState(() {
+      _distanceReference = reference;
+      selectedSort = LostSearchSortOption.nearest;
+    });
+    return true;
+  }
+
+  Future<DistanceReference?> _currentLocationReference() async {
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) {
+        _showLocationMessage('위치 서비스를 켠 후 다시 시도해 주세요.');
+        return null;
+      }
+
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+
+      if (permission == LocationPermission.denied) {
+        _showLocationMessage('가까운순을 사용하려면 위치 권한이 필요합니다.');
+        return null;
+      }
+      if (permission == LocationPermission.deniedForever) {
+        _showLocationMessage('설정에서 위치 권한을 허용해 주세요.');
+        return null;
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+        ),
+      );
+      return DistanceReference(
+        location: LatLng(position.latitude, position.longitude),
+        label: '현재 위치',
+      );
+    } catch (_) {
+      _showLocationMessage('현재 위치를 불러오지 못했습니다. 다시 시도해 주세요.');
+      return null;
+    }
+  }
+
+  void _showLocationMessage(String message) {
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   List<Widget> _filterChips() {
@@ -250,13 +322,11 @@ class _LostSearchResultPageState extends State<LostSearchResultPage> {
       if (widget.filter.dateRange != null)
         '${_formatDate(widget.filter.dateRange!.start)} ~ ${_formatDate(widget.filter.dateRange!.end)}',
       if (widget.filter.region != null) widget.filter.region!,
-      if (widget.filter.detailRegion != null) widget.filter.detailRegion!,
+      if (widget.filter.subregion != null) widget.filter.subregion!,
     ];
 
     if (labels.isEmpty) {
-      return [
-        _chip('전체'),
-      ];
+      return [_chip('전체')];
     }
 
     return labels.map(_chip).toList();
@@ -307,49 +377,74 @@ class _LostSearchResultPageState extends State<LostSearchResultPage> {
   }
 
   Future<List<LostItem>> _loadItems() async {
-    final QuerySnapshot<Map<String, dynamic>> snapshot =
-        await FirebaseFirestore.instance.collection(collectionName).get();
+    final QuerySnapshot<Map<String, dynamic>> snapshot = await _buildQuery()
+        .get();
 
-    return snapshot.docs
-        .map(LostItem.fromDoc)
-        .where(_matchesFilter)
-        .toList();
+    return snapshot.docs.map(LostItem.fromDoc).where(_matchesFilter).toList();
+  }
+
+  Query<Map<String, dynamic>> _buildQuery() {
+    Query<Map<String, dynamic>> query = FirebaseFirestore.instance.collection(
+      collectionName,
+    );
+    final LostSearchFilter filter = widget.filter;
+
+    if (filter.categories.length == 1) {
+      query = query.where('prdtClNmMg', isEqualTo: filter.categories.first);
+    } else if (filter.categories.length > 1) {
+      query = query.where('prdtClNmMg', whereIn: filter.categories);
+    }
+
+    if (filter.region != null) {
+      query = query.where('sido', isEqualTo: filter.region);
+    }
+
+    if (filter.dateRange != null) {
+      query = query
+          .where(
+            'fdYmd',
+            isGreaterThanOrEqualTo: _queryDate(filter.dateRange!.start),
+          )
+          .where(
+            'fdYmd',
+            isLessThanOrEqualTo: _queryDate(filter.dateRange!.end),
+          );
+    }
+
+    return query;
   }
 
   bool _matchesFilter(LostItem item) {
     final LostSearchFilter filter = widget.filter;
 
     if (filter.categories.isNotEmpty &&
-        !filter.categories.contains(item.category)) {
+        !filter.categories.contains(item.prdtClNmMg)) {
       return false;
     }
 
-    if (filter.region != null && !_matchesRegion(item, filter.region!)) {
+    if (filter.region != null && !_matchesSido(item, filter.region!)) {
       return false;
     }
 
-    if (filter.detailRegion != null) {
-      final String target =
-          '${item.region ?? ''} ${item.detailRegion ?? ''}'.toLowerCase();
-      if (!target.contains(filter.detailRegion!.toLowerCase())) {
-        return false;
-      }
+    if (filter.subregion != null &&
+        !_matchesSubregion(item, filter.subregion!)) {
+      return false;
     }
 
-    if (filter.dateRange != null && item.lostDate != null) {
-      final DateTime lostDate = _dateOnly(item.lostDate!);
+    if (filter.dateRange != null && item.fdYmd != null) {
+      final DateTime foundDate = _dateOnly(item.fdYmd!);
       final DateTime start = _dateOnly(filter.dateRange!.start);
       final DateTime end = _dateOnly(filter.dateRange!.end);
-      if (lostDate.isBefore(start) || lostDate.isAfter(end)) {
+      if (foundDate.isBefore(start) || foundDate.isAfter(end)) {
         return false;
       }
     }
 
-    if (filter.dateRange != null && item.lostDate == null) {
+    if (filter.dateRange != null && item.fdYmd == null) {
       return false;
     }
 
-    if (filter.keyword != null && _similarityScore(item) == 0) {
+    if (filter.keyword != null && !_matchesDetailSearch(item)) {
       return false;
     }
 
@@ -363,76 +458,35 @@ class _LostSearchResultPageState extends State<LostSearchResultPage> {
       switch (selectedSort) {
         case LostSearchSortOption.similarity:
           return _similarityScore(b).compareTo(_similarityScore(a));
-        case LostSearchSortOption.distance:
-          return _nullableDoubleCompare(a.distanceMeters, b.distanceMeters);
+        case LostSearchSortOption.nearest:
+          return _nullableDistanceCompare(_distanceTo(a), _distanceTo(b));
         case LostSearchSortOption.newest:
-          return _nullableDateCompare(b.lostDate, a.lostDate);
+          return _nullableDateCompare(b.fdYmd, a.fdYmd);
         case LostSearchSortOption.oldest:
-          return _nullableDateCompare(a.lostDate, b.lostDate);
+          return _nullableDateCompare(a.fdYmd, b.fdYmd);
       }
     });
 
     return sorted;
   }
 
-  int _similarityScore(LostItem item) {
-    int score = 0;
-    final String keyword = widget.filter.keyword?.toLowerCase() ?? '';
-    final List<String> fields = [
-      item.title,
-      item.category ?? '',
-      item.region ?? '',
-      item.detailRegion ?? '',
-      item.description ?? '',
-    ].map((value) => value.toLowerCase()).toList();
-
-    if (keyword.isNotEmpty) {
-      if (item.title.toLowerCase().contains(keyword)) {
-        score += 5;
-      }
-      for (final String field in fields.skip(1)) {
-        if (field.contains(keyword)) {
-          score += 2;
-        }
-      }
+  double? _distanceTo(LostItem item) {
+    final reference = _distanceReference;
+    final latitude = item.latitude;
+    final longitude = item.longitude;
+    if (reference == null || latitude == null || longitude == null) {
+      return null;
     }
 
-    if (item.category != null &&
-        widget.filter.categories.contains(item.category)) {
-      score += 3;
-    }
-
-    if (widget.filter.region != null &&
-        _matchesRegion(item, widget.filter.region!)) {
-      score += 2;
-    }
-
-    return score;
-  }
-
-  bool _matchesRegion(LostItem item, String region) {
-    final String locationText = _normalizeText(
-      '${item.region ?? ''} ${item.detailRegion ?? ''}',
+    return Geolocator.distanceBetween(
+      reference.location.latitude,
+      reference.location.longitude,
+      latitude,
+      longitude,
     );
-    final List<String> excludeKeywords = regionExcludeKeywords[region] ?? const [];
-    if (excludeKeywords.any((keyword) {
-      return locationText.contains(_normalizeText(keyword));
-    })) {
-      return false;
-    }
-
-    final List<String> keywords = regionKeywords[region] ?? [region];
-
-    return keywords.any((keyword) {
-      return locationText.contains(_normalizeText(keyword));
-    });
   }
 
-  String _normalizeText(String text) {
-    return text.toLowerCase().replaceAll(RegExp(r'\s+'), '');
-  }
-
-  int _nullableDateCompare(DateTime? a, DateTime? b) {
+  int _nullableDistanceCompare(double? a, double? b) {
     if (a == null && b == null) {
       return 0;
     }
@@ -442,11 +496,89 @@ class _LostSearchResultPageState extends State<LostSearchResultPage> {
     if (b == null) {
       return -1;
     }
-
     return a.compareTo(b);
   }
 
-  int _nullableDoubleCompare(double? a, double? b) {
+  int _similarityScore(LostItem item) {
+    int score = 0;
+    final List<String> keywords = _detailKeywords;
+    final List<String> secondaryFields = [
+      item.prdtClNmMg ?? '',
+      item.prdtClNmMn ?? '',
+      item.fndPlace ?? '',
+      item.fndDescription ?? '',
+      item.sido ?? '',
+      item.sigungu ?? '',
+      item.eupmyeondong ?? '',
+    ].map(_normalizeSearchText).toList();
+
+    for (final String keyword in keywords) {
+      if (_normalizeSearchText(item.fdPrdtNm).contains(keyword)) {
+        score += 5;
+      }
+      for (final String field in secondaryFields) {
+        if (field.contains(keyword)) {
+          score += 2;
+        }
+      }
+    }
+
+    if (item.prdtClNmMg != null &&
+        widget.filter.categories.contains(item.prdtClNmMg)) {
+      score += 3;
+    }
+
+    if (widget.filter.region != null &&
+        _matchesSido(item, widget.filter.region!)) {
+      score += 2;
+    }
+
+    return score;
+  }
+
+  bool _matchesDetailSearch(LostItem item) {
+    final String searchableText = _normalizeSearchText(
+      [
+        item.fdPrdtNm,
+        item.prdtClNmMg,
+        item.prdtClNmMn,
+        item.fndPlace,
+        item.fndDescription,
+        item.sido,
+        item.sigungu,
+        item.eupmyeondong,
+      ].whereType<String>().join(' '),
+    );
+
+    return _detailKeywords.every(searchableText.contains);
+  }
+
+  List<String> get _detailKeywords {
+    return (widget.filter.keyword ?? '')
+        .toLowerCase()
+        .split(_searchSeparator)
+        .map(_normalizeSearchText)
+        .where((keyword) => keyword.isNotEmpty)
+        .toSet()
+        .toList();
+  }
+
+  bool _matchesSido(LostItem item, String sido) {
+    return _normalizeSearchText(item.sido ?? '') == _normalizeSearchText(sido);
+  }
+
+  bool _matchesSubregion(LostItem item, String subregion) {
+    final itemRegion = _normalizeSearchText(
+      '${item.sigungu ?? ''} ${item.eupmyeondong ?? ''}',
+    );
+    return itemRegion.contains(_normalizeSearchText(subregion));
+  }
+
+  String _normalizeSearchText(String text) {
+    return text.toLowerCase().replaceAll(_searchSeparator, '');
+  }
+
+  int _nullableDateCompare(DateTime? a, DateTime? b) {
     if (a == null && b == null) {
       return 0;
     }
@@ -464,6 +596,12 @@ class _LostSearchResultPageState extends State<LostSearchResultPage> {
     return DateTime(date.year, date.month, date.day);
   }
 
+  String _queryDate(DateTime date) {
+    final String month = date.month.toString().padLeft(2, '0');
+    final String day = date.day.toString().padLeft(2, '0');
+    return '${date.year}-$month-$day';
+  }
+
   String _formatDate(DateTime? date) {
     if (date == null) {
       return '날짜 없음';
@@ -473,30 +611,20 @@ class _LostSearchResultPageState extends State<LostSearchResultPage> {
     final String day = date.day.toString().padLeft(2, '0');
     return '${date.year}-$month-$day';
   }
-
-  String _formatDistance(double? meters) {
-    if (meters == null) {
-      return '거리 정보 없음';
-    }
-
-    if (meters >= 1000) {
-      return '${(meters / 1000).toStringAsFixed(1)}km';
-    }
-
-    return '${meters.round()}m';
-  }
 }
 
 class _LostItemCard extends StatelessWidget {
   const _LostItemCard({
     required this.item,
     required this.formatDate,
-    required this.formatDistance,
+    required this.showDistance,
+    required this.distanceMeters,
   });
 
   final LostItem item;
   final String Function(DateTime? date) formatDate;
-  final String Function(double? meters) formatDistance;
+  final bool showDistance;
+  final double? distanceMeters;
 
   @override
   Widget build(BuildContext context) {
@@ -521,7 +649,7 @@ class _LostItemCard extends StatelessWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        item.title,
+                        item.fdPrdtNm,
                         style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
@@ -529,28 +657,30 @@ class _LostItemCard extends StatelessWidget {
                         ),
                       ),
                     ),
-                    if (item.category != null) _categoryBadge(item.category!),
+                    if (item.prdtClNmMg != null)
+                      _categoryBadge(item.prdtClNmMg!),
                   ],
                 ),
                 const SizedBox(height: 8),
                 _infoRow(
                   Icons.calendar_today_outlined,
-                  '분실일 ${formatDate(item.lostDate)}',
+                  '습득일 ${formatDate(item.fdYmd)}',
                 ),
                 const SizedBox(height: 4),
-                _infoRow(
-                  Icons.location_on_outlined,
-                  _locationText,
-                ),
-                const SizedBox(height: 4),
-                _infoRow(
-                  Icons.near_me_outlined,
-                  formatDistance(item.distanceMeters),
-                ),
-                if (item.description != null) ...[
+                _infoRow(Icons.location_on_outlined, _locationText),
+                if (showDistance) ...[
+                  const SizedBox(height: 4),
+                  _infoRow(
+                    Icons.near_me_outlined,
+                    distanceMeters == null
+                        ? '거리 정보 없음'
+                        : '기준 위치에서 ${_formatDistance(distanceMeters!)}',
+                  ),
+                ],
+                if (item.fndDescription != null) ...[
                   const SizedBox(height: 8),
                   Text(
-                    item.description!,
+                    item.fndDescription!,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
@@ -569,11 +699,20 @@ class _LostItemCard extends StatelessWidget {
 
   String get _locationText {
     final List<String> parts = [
-      if (item.region != null) item.region!,
-      if (item.detailRegion != null) item.detailRegion!,
+      if (item.sido != null) item.sido!,
+      if (item.sigungu != null) item.sigungu!,
+      if (item.eupmyeondong != null) item.eupmyeondong!,
+      if (item.fndPlace != null) item.fndPlace!,
     ];
 
     return parts.isEmpty ? '지역 정보 없음' : parts.join(' ');
+  }
+
+  String _formatDistance(double meters) {
+    if (meters < 1000) {
+      return '${meters.round()}m';
+    }
+    return '${(meters / 1000).toStringAsFixed(1)}km';
   }
 
   Widget _thumbnail() {
@@ -583,16 +722,16 @@ class _LostItemCard extends StatelessWidget {
         width: 76,
         height: 76,
         color: const Color(0xFFEAF2FF),
-        child: item.imageUrl == null
+        child: item.fdFilePathImg == null
             ? const Icon(
                 Icons.inventory_2_outlined,
                 color: Color(0xFF2563EB),
                 size: 32,
               )
             : Image.network(
-                item.imageUrl!,
+                item.fdFilePathImg!,
                 fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) {
+                errorBuilder: (_, _, _) {
                   return const Icon(
                     Icons.broken_image_outlined,
                     color: Color(0xFF9CA3AF),
@@ -630,10 +769,7 @@ class _LostItemCard extends StatelessWidget {
           child: Text(
             text,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: Color(0xFF6B7280),
-              fontSize: 13,
-            ),
+            style: const TextStyle(color: Color(0xFF6B7280), fontSize: 13),
           ),
         ),
       ],

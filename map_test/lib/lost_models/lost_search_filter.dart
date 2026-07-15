@@ -6,20 +6,20 @@ class LostSearchFilter {
     required this.keyword,
     required this.dateRange,
     required this.region,
-    required this.detailRegion,
+    required this.subregion,
   });
 
   final List<String> categories;
   final String? keyword;
   final DateTimeRange? dateRange;
   final String? region;
-  final String? detailRegion;
+  final String? subregion;
 
   bool get hasFilter {
     return categories.isNotEmpty ||
         keyword != null ||
         dateRange != null ||
         region != null ||
-        detailRegion != null;
+        subregion != null;
   }
 }

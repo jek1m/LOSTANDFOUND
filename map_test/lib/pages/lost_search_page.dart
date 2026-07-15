@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../lost_models/lost_search_filter.dart';
+import '../lost_models/korean_administrative_regions.dart';
 import '../widgets/date_range_bottom_sheet.dart';
 import 'lost_search_result_page.dart';
 
@@ -13,10 +14,13 @@ class LostSearchPage extends StatefulWidget {
 
 class _LostSearchPageState extends State<LostSearchPage> {
   final TextEditingController keywordController = TextEditingController();
-  final TextEditingController detailRegionController = TextEditingController();
+  final ExpansibleController regionAccordionController = ExpansibleController();
+  final ExpansibleController subregionAccordionController =
+      ExpansibleController();
 
   final Set<String> selectedCategories = {};
   String selectedRegion = '선택';
+  String? selectedSubregion;
   DateTimeRange? selectedDateRange;
 
   final List<String> categories = [
@@ -66,25 +70,25 @@ class _LostSearchPageState extends State<LostSearchPage> {
   @override
   void dispose() {
     keywordController.dispose();
-    detailRegionController.dispose();
     super.dispose();
   }
 
   Future<void> pickDateRange() async {
     final DateTime now = DateTime.now();
 
-    final DateTimeRange? pickedRange = await showModalBottomSheet<DateTimeRange>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        return DateRangeBottomSheet(
-          firstDate: DateTime(2020),
-          lastDate: DateTime(now.year, now.month, now.day),
-          initialDateRange: selectedDateRange,
+    final DateTimeRange? pickedRange =
+        await showModalBottomSheet<DateTimeRange>(
+          context: context,
+          isScrollControlled: true,
+          backgroundColor: Colors.transparent,
+          builder: (context) {
+            return DateRangeBottomSheet(
+              firstDate: DateTime(2020),
+              lastDate: DateTime(now.year, now.month, now.day),
+              initialDateRange: selectedDateRange,
+            );
+          },
         );
-      },
-    );
 
     if (pickedRange != null) {
       setState(() {
@@ -95,14 +99,13 @@ class _LostSearchPageState extends State<LostSearchPage> {
 
   void searchLostItems() {
     final String keyword = keywordController.text.trim();
-    final String detailRegion = detailRegionController.text.trim();
 
     final LostSearchFilter searchFilter = LostSearchFilter(
       categories: selectedCategories.toList(),
       keyword: keyword.isEmpty ? null : keyword,
       dateRange: selectedDateRange,
       region: selectedRegion == '선택' ? null : selectedRegion,
-      detailRegion: detailRegion.isEmpty ? null : detailRegion,
+      subregion: selectedSubregion,
     );
 
     Navigator.push(
@@ -117,9 +120,9 @@ class _LostSearchPageState extends State<LostSearchPage> {
     setState(() {
       selectedCategories.clear();
       selectedRegion = '선택';
+      selectedSubregion = null;
       selectedDateRange = null;
       keywordController.clear();
-      detailRegionController.clear();
     });
   }
 
@@ -143,7 +146,6 @@ class _LostSearchPageState extends State<LostSearchPage> {
   List<Widget> buildAppliedFilterChips() {
     final List<Widget> chips = [];
     final String keyword = keywordController.text.trim();
-    final String detailRegion = detailRegionController.text.trim();
 
     for (final String category in selectedCategories) {
       chips.add(_filterChip(category));
@@ -158,9 +160,11 @@ class _LostSearchPageState extends State<LostSearchPage> {
     }
 
     if (selectedRegion != '선택') {
-      chips.add(
-        _filterChip(detailRegion.isEmpty ? selectedRegion : '$selectedRegion $detailRegion'),
-      );
+      chips.add(_filterChip(selectedRegion));
+    }
+
+    if (selectedSubregion != null) {
+      chips.add(_filterChip(selectedSubregion!));
     }
 
     return chips;
@@ -180,6 +184,8 @@ class _LostSearchPageState extends State<LostSearchPage> {
   @override
   Widget build(BuildContext context) {
     final List<Widget> appliedFilters = buildAppliedFilterChips();
+    final List<String> subregions =
+        koreanSubregions[selectedRegion] ?? const [];
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -221,26 +227,7 @@ class _LostSearchPageState extends State<LostSearchPage> {
 
                     const SizedBox(height: 24),
 
-                    _sectionTitle(Icons.search, '분실물명'),
-
-                    const SizedBox(height: 8),
-
-                    TextField(
-                      controller: keywordController,
-                      decoration: InputDecoration(
-                        hintText: '물품 이름을 입력하세요',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      onChanged: (_) {
-                        setState(() {});
-                      },
-                    ),
-
-                    const SizedBox(height: 24),
-
-                    _sectionTitle(Icons.calendar_month_outlined, '분실일자'),
+                    _sectionTitle(Icons.calendar_month_outlined, '습득일자'),
 
                     const SizedBox(height: 8),
 
@@ -276,8 +263,9 @@ class _LostSearchPageState extends State<LostSearchPage> {
                     ),
 
                     const SizedBox(height: 24),
-                    
+
                     _optionAccordion(
+                      controller: regionAccordionController,
                       icon: Icons.location_on_outlined,
                       title: '지역',
                       hintText: '지역을 선택하세요',
@@ -287,18 +275,49 @@ class _LostSearchPageState extends State<LostSearchPage> {
                       options: regions,
                       onSelected: (value) {
                         setState(() {
-                          selectedRegion = selectedRegion == value ? '선택' : value;
+                          selectedRegion = selectedRegion == value
+                              ? '선택'
+                              : value;
+                          selectedSubregion = null;
                         });
+                        regionAccordionController.collapse();
                       },
                     ),
 
-                    const SizedBox(height: 10),
+                    if (subregions.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      _optionAccordion(
+                        controller: subregionAccordionController,
+                        icon: Icons.account_tree_outlined,
+                        title: selectedRegion == '세종특별자치시' ? '읍·면·동' : '시·군·구',
+                        hintText: selectedRegion == '세종특별자치시'
+                            ? '읍·면·동을 선택하세요'
+                            : '시·군·구를 선택하세요',
+                        selectedValues: selectedSubregion == null
+                            ? const <String>{}
+                            : {selectedSubregion!},
+                        options: subregions,
+                        onSelected: (value) {
+                          setState(() {
+                            selectedSubregion = selectedSubregion == value
+                                ? null
+                                : value;
+                          });
+                          subregionAccordionController.collapse();
+                        },
+                      ),
+                    ],
+
+                    const SizedBox(height: 24),
+
+                    _sectionTitle(Icons.search, '상세 검색'),
+
+                    const SizedBox(height: 8),
 
                     TextField(
-                      controller: detailRegionController,
+                      controller: keywordController,
                       decoration: InputDecoration(
-                        hintText: '상세 지역을 입력하세요. 예: 고양시, 강남구',
-                        helperText: '선택하지 않으면 전체 검색',
+                        hintText: '물품명, 장소, 특징 등을 입력하세요',
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
@@ -319,11 +338,7 @@ class _LostSearchPageState extends State<LostSearchPage> {
                         ),
                       ),
                       const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: appliedFilters,
-                      ),
+                      Wrap(spacing: 8, runSpacing: 8, children: appliedFilters),
                     ],
                   ],
                 ),
@@ -334,9 +349,7 @@ class _LostSearchPageState extends State<LostSearchPage> {
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
               decoration: const BoxDecoration(
                 color: Colors.white,
-                border: Border(
-                  top: BorderSide(color: Color(0xFFE5E7EB)),
-                ),
+                border: Border(top: BorderSide(color: Color(0xFFE5E7EB))),
               ),
               child: Column(
                 children: [
@@ -387,6 +400,7 @@ class _LostSearchPageState extends State<LostSearchPage> {
   }
 
   Widget _optionAccordion({
+    ExpansibleController? controller,
     required IconData icon,
     required String title,
     required String hintText,
@@ -405,6 +419,7 @@ class _LostSearchPageState extends State<LostSearchPage> {
             borderRadius: BorderRadius.circular(12),
           ),
           child: ExpansionTile(
+            controller: controller,
             tilePadding: const EdgeInsets.symmetric(horizontal: 14),
             childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
             title: Text(
