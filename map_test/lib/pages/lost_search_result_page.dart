@@ -31,11 +31,23 @@ class LostSearchResultPage extends StatefulWidget {
 
 class _LostSearchResultPageState extends State<LostSearchResultPage> {
   static const String collectionName = 'found_items';
+  static const int _pageSize = 20;
   static final RegExp _searchSeparator = RegExp(r'[^0-9a-zA-Z가-힣]+');
 
   LostSearchSortOption selectedSort = LostSearchSortOption.similarity;
   DistanceReference? _distanceReference;
-  late final Future<List<LostItem>> itemsFuture = _loadItems();
+  final List<LostItem> _items = [];
+  DocumentSnapshot<Map<String, dynamic>>? _lastDocument;
+  Object? _loadError;
+  bool _isInitialLoading = true;
+  bool _isLoadingMore = false;
+  bool _hasMore = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadNextPage();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -50,51 +62,98 @@ class _LostSearchResultPageState extends State<LostSearchResultPage> {
         foregroundColor: const Color(0xFF111827),
         elevation: 0.5,
       ),
-      body: FutureBuilder<List<LostItem>>(
-        future: itemsFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
+      body: _buildBody(),
+    );
+  }
 
-          if (snapshot.hasError) {
-            return _messageView(
-              icon: Icons.error_outline,
-              title: '검색 결과를 불러오지 못했습니다',
-              message: '${snapshot.error}',
-            );
-          }
+  Widget _buildBody() {
+    if (_isInitialLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
 
-          final List<LostItem> items = _sortedItems(snapshot.data ?? []);
+    if (_loadError != null && _items.isEmpty) {
+      return _messageView(
+        icon: Icons.error_outline,
+        title: '검색 결과를 불러오지 못했습니다',
+        message: '$_loadError',
+        action: OutlinedButton(
+          onPressed: _loadNextPage,
+          child: const Text('다시 시도'),
+        ),
+      );
+    }
 
-          return Column(
-            children: [
-              _resultHeader(items.length),
-              Expanded(
-                child: items.isEmpty
-                    ? _messageView(
-                        icon: Icons.search_off_outlined,
-                        title: '검색 결과가 없습니다',
-                        message: '필터 조건을 줄이거나 다른 키워드로 검색해보세요.',
-                      )
-                    : ListView.separated(
-                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-                        itemCount: items.length,
-                        separatorBuilder: (_, _) => const SizedBox(height: 10),
-                        itemBuilder: (context, index) {
-                          return _LostItemCard(
-                            item: items[index],
-                            formatDate: _formatDate,
-                            showDistance:
-                                selectedSort == LostSearchSortOption.nearest,
-                            distanceMeters: _distanceTo(items[index]),
-                          );
-                        },
-                      ),
-              ),
-            ],
-          );
-        },
+    final List<LostItem> items = _sortedItems(_items);
+    return Column(
+      children: [
+        _resultHeader(items.length),
+        Expanded(child: _buildResultList(items)),
+      ],
+    );
+  }
+
+  Widget _buildResultList(List<LostItem> items) {
+    if (items.isEmpty) {
+      return _messageView(
+        icon: Icons.search_off_outlined,
+        title: _hasMore ? '이번 페이지에 일치하는 결과가 없습니다' : '검색 결과가 없습니다',
+        message: _hasMore
+            ? '다음 페이지를 불러오면 추가 문서를 검색합니다.'
+            : '필터 조건을 줄이거나 다른 키워드로 검색해보세요.',
+        action: _hasMore ? _loadMoreButton() : null,
+      );
+    }
+
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+      itemCount: items.length + 1,
+      separatorBuilder: (_, _) => const SizedBox(height: 10),
+      itemBuilder: (context, index) {
+        if (index == items.length) {
+          return _paginationFooter();
+        }
+
+        return _LostItemCard(
+          item: items[index],
+          formatDate: _formatDate,
+          showDistance: selectedSort == LostSearchSortOption.nearest,
+          distanceMeters: _distanceTo(items[index]),
+        );
+      },
+    );
+  }
+
+  Widget _paginationFooter() {
+    if (_isLoadingMore) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 16),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (_loadError != null) {
+      return Column(
+        children: [
+          const Text('추가 결과를 불러오지 못했습니다.'),
+          const SizedBox(height: 8),
+          _loadMoreButton(),
+        ],
+      );
+    }
+    if (_hasMore) {
+      return _loadMoreButton();
+    }
+    return const Padding(
+      padding: EdgeInsets.symmetric(vertical: 12),
+      child: Center(child: Text('모든 검색 결과를 불러왔습니다.')),
+    );
+  }
+
+  Widget _loadMoreButton() {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton(
+        onPressed: _isLoadingMore ? null : _loadNextPage,
+        child: const Text('더 불러오기'),
       ),
     );
   }
@@ -114,7 +173,9 @@ class _LostSearchResultPageState extends State<LostSearchResultPage> {
             children: [
               Expanded(
                 child: Text(
-                  '검색 결과 $count건',
+                  _hasMore
+                      ? '불러온 검색 결과 $count건'
+                      : '검색 결과 $count건',
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
@@ -347,6 +408,7 @@ class _LostSearchResultPageState extends State<LostSearchResultPage> {
     required IconData icon,
     required String title,
     required String message,
+    Widget? action,
   }) {
     return Center(
       child: Padding(
@@ -370,17 +432,61 @@ class _LostSearchResultPageState extends State<LostSearchResultPage> {
               textAlign: TextAlign.center,
               style: const TextStyle(color: Color(0xFF6B7280)),
             ),
+            if (action != null) ...[
+              const SizedBox(height: 16),
+              action,
+            ],
           ],
         ),
       ),
     );
   }
 
-  Future<List<LostItem>> _loadItems() async {
-    final QuerySnapshot<Map<String, dynamic>> snapshot = await _buildQuery()
-        .get();
+  Future<void> _loadNextPage() async {
+    if (_isLoadingMore || !_hasMore) {
+      return;
+    }
 
-    return snapshot.docs.map(LostItem.fromDoc).where(_matchesFilter).toList();
+    setState(() {
+      _isLoadingMore = true;
+      _loadError = null;
+    });
+
+    try {
+      Query<Map<String, dynamic>> query = _buildQuery().limit(_pageSize);
+      final lastDocument = _lastDocument;
+      if (lastDocument != null) {
+        query = query.startAfterDocument(lastDocument);
+      }
+
+      final QuerySnapshot<Map<String, dynamic>> snapshot = await query.get();
+      final List<LostItem> newItems = snapshot.docs
+          .map(LostItem.fromDoc)
+          .where(_matchesFilter)
+          .toList();
+
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _items.addAll(newItems);
+        if (snapshot.docs.isNotEmpty) {
+          _lastDocument = snapshot.docs.last;
+        }
+        _hasMore = snapshot.docs.length == _pageSize;
+        _isInitialLoading = false;
+        _isLoadingMore = false;
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _loadError = error;
+        _isInitialLoading = false;
+        _isLoadingMore = false;
+      });
+    }
   }
 
   Query<Map<String, dynamic>> _buildQuery() {
@@ -411,7 +517,7 @@ class _LostSearchResultPageState extends State<LostSearchResultPage> {
           );
     }
 
-    return query;
+    return query.orderBy('fdYmd', descending: true);
   }
 
   bool _matchesFilter(LostItem item) {
