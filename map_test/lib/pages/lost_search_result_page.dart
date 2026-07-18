@@ -173,9 +173,7 @@ class _LostSearchResultPageState extends State<LostSearchResultPage> {
             children: [
               Expanded(
                 child: Text(
-                  _hasMore
-                      ? '불러온 검색 결과 $count건'
-                      : '검색 결과 $count건',
+                  _hasMore ? '불러온 검색 결과 $count건' : '검색 결과 $count건',
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
@@ -432,10 +430,7 @@ class _LostSearchResultPageState extends State<LostSearchResultPage> {
               textAlign: TextAlign.center,
               style: const TextStyle(color: Color(0xFF6B7280)),
             ),
-            if (action != null) ...[
-              const SizedBox(height: 16),
-              action,
-            ],
+            if (action != null) ...[const SizedBox(height: 16), action],
           ],
         ),
       ),
@@ -503,6 +498,13 @@ class _LostSearchResultPageState extends State<LostSearchResultPage> {
 
     if (filter.region != null) {
       query = query.where('sido', isEqualTo: filter.region);
+    }
+
+    if (filter.subregion != null) {
+      final subregionField = filter.region == '세종특별자치시'
+          ? 'eupmyeondong'
+          : 'sigungu';
+      query = query.where(subregionField, isEqualTo: filter.subregion);
     }
 
     if (filter.dateRange != null) {

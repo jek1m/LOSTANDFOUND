@@ -1,12 +1,31 @@
 import 'package:flutter/material.dart';
+import 'package:geocoding/geocoding.dart';
+import 'package:geolocator/geolocator.dart';
 
 import '../lost_models/lost_search_filter.dart';
 import '../lost_models/korean_administrative_regions.dart';
 import '../widgets/date_range_bottom_sheet.dart';
 import 'lost_search_result_page.dart';
 
+class DetectedSearchRegion {
+  const DetectedSearchRegion({required this.region, this.subregion});
+
+  final String region;
+  final String? subregion;
+}
+
+typedef SearchRegionDetector =
+    Future<DetectedSearchRegion?> Function({required bool requestPermission});
+
 class LostSearchPage extends StatefulWidget {
-  const LostSearchPage({super.key});
+  const LostSearchPage({
+    super.key,
+    this.autoDetectLocation = true,
+    this.regionDetector,
+  });
+
+  final bool autoDetectLocation;
+  final SearchRegionDetector? regionDetector;
 
   @override
   State<LostSearchPage> createState() => _LostSearchPageState();
@@ -21,7 +40,11 @@ class _LostSearchPageState extends State<LostSearchPage> {
   final Set<String> selectedCategories = {};
   String selectedRegion = '선택';
   String? selectedSubregion;
-  DateTimeRange? selectedDateRange;
+  late DateTimeRange selectedDateRange;
+  bool _isLocating = false;
+  bool _isUsingCurrentLocation = false;
+  String? _locationMessage;
+  int _locationRequestId = 0;
 
   final List<String> categories = [
     '가방',
@@ -68,6 +91,15 @@ class _LostSearchPageState extends State<LostSearchPage> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    selectedDateRange = _recentThreeDays();
+    if (widget.autoDetectLocation) {
+      _setRegionFromCurrentLocation(requestPermission: false);
+    }
+  }
+
+  @override
   void dispose() {
     keywordController.dispose();
     super.dispose();
@@ -97,6 +129,183 @@ class _LostSearchPageState extends State<LostSearchPage> {
     }
   }
 
+  DateTimeRange _recentThreeDays() {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    return DateTimeRange(
+      start: today.subtract(const Duration(days: 2)),
+      end: today,
+    );
+  }
+
+  bool get _isRecentThreeDays {
+    final recent = _recentThreeDays();
+    return selectedDateRange.start == recent.start &&
+        selectedDateRange.end == recent.end;
+  }
+
+  Future<void> _setRegionFromCurrentLocation({
+    required bool requestPermission,
+  }) async {
+    if (_isLocating) {
+      return;
+    }
+
+    final requestId = ++_locationRequestId;
+    setState(() {
+      _isLocating = true;
+      _locationMessage = null;
+    });
+
+    try {
+      final customDetector = widget.regionDetector;
+      if (customDetector != null) {
+        final detected = await customDetector(
+          requestPermission: requestPermission,
+        );
+        if (detected == null) {
+          _finishLocationLookup(requestId, '현재 위치의 지역명을 확인하지 못했어요.');
+          return;
+        }
+        _applyDetectedRegion(requestId, detected.region, detected.subregion);
+        return;
+      }
+
+      if (!await Geolocator.isLocationServiceEnabled().timeout(
+        const Duration(seconds: 5),
+      )) {
+        _finishLocationLookup(requestId, '위치 서비스를 켜면 현재 지역을 자동으로 설정할 수 있어요.');
+        return;
+      }
+
+      var permission = await Geolocator.checkPermission().timeout(
+        const Duration(seconds: 5),
+      );
+      if (permission == LocationPermission.denied && requestPermission) {
+        permission = await Geolocator.requestPermission().timeout(
+          const Duration(seconds: 30),
+        );
+      }
+
+      if (permission == LocationPermission.denied) {
+        _finishLocationLookup(requestId, '현재 위치로 지역 설정을 하려면 위치 권한을 허용해 주세요.');
+        return;
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        _finishLocationLookup(requestId, '설정에서 위치 권한을 허용한 뒤 다시 시도해 주세요.');
+        return;
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.medium,
+        ),
+      ).timeout(const Duration(seconds: 15));
+      final placemarks = await Geocoding(locale: const Locale('ko', 'KR'))
+          .placemarkFromCoordinates(position.latitude, position.longitude)
+          .timeout(const Duration(seconds: 10));
+
+      if (placemarks.isEmpty) {
+        _finishLocationLookup(requestId, '현재 위치의 지역명을 확인하지 못했어요.');
+        return;
+      }
+
+      final placemark = placemarks.first;
+      final region = _findSupportedRegion(placemark);
+      if (region == null) {
+        _finishLocationLookup(requestId, '현재 위치는 지역 필터에서 찾지 못했어요.');
+        return;
+      }
+
+      final subregion = _findSupportedSubregion(placemark, region);
+      _applyDetectedRegion(requestId, region, subregion);
+    } catch (_) {
+      _finishLocationLookup(requestId, '현재 위치를 확인하지 못했어요. 잠시 후 다시 시도해 주세요.');
+    }
+  }
+
+  void _applyDetectedRegion(int requestId, String region, String? subregion) {
+    if (!_isActiveLocationRequest(requestId)) {
+      return;
+    }
+
+    setState(() {
+      selectedRegion = region;
+      selectedSubregion = subregion;
+      _isLocating = false;
+      _isUsingCurrentLocation = true;
+      _locationMessage = subregion == null
+          ? '현재 위치 기준으로 $region을 선택했어요.'
+          : '현재 위치 기준으로 $region $subregion을 선택했어요.';
+    });
+  }
+
+  void _finishLocationLookup(int requestId, String message) {
+    if (!_isActiveLocationRequest(requestId)) {
+      return;
+    }
+    setState(() {
+      _isLocating = false;
+      _isUsingCurrentLocation = false;
+      _locationMessage = message;
+    });
+  }
+
+  bool _isActiveLocationRequest(int requestId) {
+    return mounted && requestId == _locationRequestId;
+  }
+
+  void _cancelPendingLocationLookup() {
+    _locationRequestId++;
+    _isLocating = false;
+    _isUsingCurrentLocation = false;
+    _locationMessage = null;
+  }
+
+  String? _findSupportedRegion(Placemark placemark) {
+    final candidates = _placemarkParts(placemark);
+    const aliases = {'강원특별자치도': '강원도', '전라북도': '전북특별자치도'};
+
+    for (final candidate in candidates) {
+      final normalized = aliases[candidate] ?? candidate;
+      for (final region in regions) {
+        if (normalized == region || normalized.contains(region)) {
+          return region;
+        }
+      }
+    }
+    return null;
+  }
+
+  String? _findSupportedSubregion(Placemark placemark, String region) {
+    final supported = koreanSubregions[region] ?? const <String>[];
+    final candidates = _placemarkParts(placemark);
+
+    for (final candidate in candidates) {
+      for (final subregion in supported) {
+        if (candidate == subregion || candidate.contains(subregion)) {
+          return subregion;
+        }
+      }
+    }
+    return null;
+  }
+
+  List<String> _placemarkParts(Placemark placemark) {
+    return [
+          placemark.administrativeArea,
+          placemark.subAdministrativeArea,
+          placemark.locality,
+          placemark.subLocality,
+          placemark.name,
+        ]
+        .whereType<String>()
+        .map((value) => value.trim())
+        .where((value) => value.isNotEmpty)
+        .toList();
+  }
+
   void searchLostItems() {
     final String keyword = keywordController.text.trim();
 
@@ -118,21 +327,19 @@ class _LostSearchPageState extends State<LostSearchPage> {
 
   void resetFilters() {
     setState(() {
+      _cancelPendingLocationLookup();
       selectedCategories.clear();
       selectedRegion = '선택';
       selectedSubregion = null;
-      selectedDateRange = null;
+      selectedDateRange = _recentThreeDays();
       keywordController.clear();
     });
+    _setRegionFromCurrentLocation(requestPermission: false);
   }
 
   String get dateRangeText {
-    if (selectedDateRange == null) {
-      return '연도-월-일  ~  연도-월-일';
-    }
-
-    final DateTime start = selectedDateRange!.start;
-    final DateTime end = selectedDateRange!.end;
+    final DateTime start = selectedDateRange.start;
+    final DateTime end = selectedDateRange.end;
 
     return '${_formatDate(start)}  ~  ${_formatDate(end)}';
   }
@@ -155,9 +362,11 @@ class _LostSearchPageState extends State<LostSearchPage> {
       chips.add(_filterChip(keyword));
     }
 
-    if (selectedDateRange != null) {
-      chips.add(_filterChip(dateRangeText));
-    }
+    chips.add(
+      _filterChip(
+        _isRecentThreeDays ? '$dateRangeText · 최근 3일' : dateRangeText,
+      ),
+    );
 
     if (selectedRegion != '선택') {
       chips.add(_filterChip(selectedRegion));
@@ -250,9 +459,7 @@ class _LostSearchPageState extends State<LostSearchPage> {
                               child: Text(
                                 dateRangeText,
                                 style: TextStyle(
-                                  color: selectedDateRange == null
-                                      ? Colors.grey
-                                      : const Color(0xFF111827),
+                                  color: const Color(0xFF111827),
                                 ),
                               ),
                             ),
@@ -275,6 +482,7 @@ class _LostSearchPageState extends State<LostSearchPage> {
                       options: regions,
                       onSelected: (value) {
                         setState(() {
+                          _cancelPendingLocationLookup();
                           selectedRegion = selectedRegion == value
                               ? '선택'
                               : value;
@@ -283,6 +491,9 @@ class _LostSearchPageState extends State<LostSearchPage> {
                         regionAccordionController.collapse();
                       },
                     ),
+
+                    const SizedBox(height: 8),
+                    _currentLocationControl(),
 
                     if (subregions.isNotEmpty) ...[
                       const SizedBox(height: 12),
@@ -299,6 +510,7 @@ class _LostSearchPageState extends State<LostSearchPage> {
                         options: subregions,
                         onSelected: (value) {
                           setState(() {
+                            _cancelPendingLocationLookup();
                             selectedSubregion = selectedSubregion == value
                                 ? null
                                 : value;
@@ -396,6 +608,73 @@ class _LostSearchPageState extends State<LostSearchPage> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _currentLocationControl() {
+    if (_isLocating) {
+      return const Row(
+        children: [
+          SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          SizedBox(width: 8),
+          Text(
+            '현재 위치로 지역을 확인하는 중이에요.',
+            style: TextStyle(color: Color(0xFF6B7280), fontSize: 13),
+          ),
+        ],
+      );
+    }
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(
+          _isUsingCurrentLocation
+              ? Icons.my_location
+              : Icons.location_searching,
+          size: 17,
+          color: _isUsingCurrentLocation
+              ? const Color(0xFF2563EB)
+              : const Color(0xFF6B7280),
+        ),
+        const SizedBox(width: 7),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (_locationMessage != null)
+                Text(
+                  _locationMessage!,
+                  style: TextStyle(
+                    color: _isUsingCurrentLocation
+                        ? const Color(0xFF2563EB)
+                        : const Color(0xFF6B7280),
+                    fontSize: 13,
+                    height: 1.35,
+                  ),
+                ),
+              if (!_isUsingCurrentLocation) ...[
+                if (_locationMessage != null) const SizedBox(height: 5),
+                TextButton.icon(
+                  onPressed: () =>
+                      _setRegionFromCurrentLocation(requestPermission: true),
+                  style: TextButton.styleFrom(
+                    padding: EdgeInsets.zero,
+                    minimumSize: const Size(0, 32),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  icon: const Icon(Icons.my_location, size: 16),
+                  label: const Text('현재 위치로 설정'),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
     );
   }
 
