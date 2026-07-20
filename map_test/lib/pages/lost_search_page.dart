@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
@@ -94,7 +95,7 @@ class _LostSearchPageState extends State<LostSearchPage> {
   void initState() {
     super.initState();
     selectedDateRange = _recentThreeDays();
-    if (widget.autoDetectLocation) {
+    if (widget.autoDetectLocation && !kIsWeb) {
       _setRegionFromCurrentLocation(requestPermission: false);
     }
   }
@@ -171,6 +172,14 @@ class _LostSearchPageState extends State<LostSearchPage> {
         return;
       }
 
+      if (kIsWeb) {
+        _finishLocationLookup(
+          requestId,
+          '웹에서는 현재 위치의 지역명 자동 변환을 지원하지 않아요. 지역을 직접 선택해 주세요.',
+        );
+        return;
+      }
+
       if (!await Geolocator.isLocationServiceEnabled().timeout(
         const Duration(seconds: 5),
       )) {
@@ -202,6 +211,7 @@ class _LostSearchPageState extends State<LostSearchPage> {
           accuracy: LocationAccuracy.medium,
         ),
       ).timeout(const Duration(seconds: 15));
+
       final placemarks = await Geocoding(locale: const Locale('ko', 'KR'))
           .placemarkFromCoordinates(position.latitude, position.longitude)
           .timeout(const Duration(seconds: 10));
@@ -475,6 +485,8 @@ class _LostSearchPageState extends State<LostSearchPage> {
                       controller: regionAccordionController,
                       icon: Icons.location_on_outlined,
                       title: '지역',
+                      headerAccessory: _currentLocationAction(),
+                      footerAccessory: _currentLocationFeedback(),
                       hintText: '지역을 선택하세요',
                       selectedValues: selectedRegion == '선택'
                           ? const <String>{}
@@ -491,9 +503,6 @@ class _LostSearchPageState extends State<LostSearchPage> {
                         regionAccordionController.collapse();
                       },
                     ),
-
-                    const SizedBox(height: 8),
-                    _currentLocationControl(),
 
                     if (subregions.isNotEmpty) ...[
                       const SizedBox(height: 12),
@@ -611,67 +620,56 @@ class _LostSearchPageState extends State<LostSearchPage> {
     );
   }
 
-  Widget _currentLocationControl() {
-    if (_isLocating) {
-      return const Row(
-        children: [
-          SizedBox(
-            width: 16,
-            height: 16,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
-          SizedBox(width: 8),
-          Text(
-            '현재 위치로 지역을 확인하는 중이에요.',
-            style: TextStyle(color: Color(0xFF6B7280), fontSize: 13),
-          ),
-        ],
-      );
+  Widget _currentLocationAction() {
+    return TextButton.icon(
+      onPressed: _isLocating
+          ? null
+          : () => _setRegionFromCurrentLocation(requestPermission: true),
+      style: TextButton.styleFrom(
+        padding: EdgeInsets.zero,
+        minimumSize: const Size(0, 30),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        visualDensity: VisualDensity.compact,
+      ),
+      icon: _isLocating
+          ? const SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Icon(Icons.my_location, size: 15),
+      label: Text(
+        _isLocating ? '현재 위치 확인 중' : '현재 위치로 설정',
+        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+      ),
+    );
+  }
+
+  Widget? _currentLocationFeedback() {
+    final message = _locationMessage;
+    if (message == null) {
+      return null;
     }
+
+    final color = _isUsingCurrentLocation
+        ? const Color(0xFF2563EB)
+        : const Color(0xFF6B7280);
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Icon(
           _isUsingCurrentLocation
-              ? Icons.my_location
-              : Icons.location_searching,
-          size: 17,
-          color: _isUsingCurrentLocation
-              ? const Color(0xFF2563EB)
-              : const Color(0xFF6B7280),
+              ? Icons.check_circle_outline
+              : Icons.info_outline,
+          size: 15,
+          color: color,
         ),
-        const SizedBox(width: 7),
+        const SizedBox(width: 6),
         Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (_locationMessage != null)
-                Text(
-                  _locationMessage!,
-                  style: TextStyle(
-                    color: _isUsingCurrentLocation
-                        ? const Color(0xFF2563EB)
-                        : const Color(0xFF6B7280),
-                    fontSize: 13,
-                    height: 1.35,
-                  ),
-                ),
-              if (!_isUsingCurrentLocation) ...[
-                if (_locationMessage != null) const SizedBox(height: 5),
-                TextButton.icon(
-                  onPressed: () =>
-                      _setRegionFromCurrentLocation(requestPermission: true),
-                  style: TextButton.styleFrom(
-                    padding: EdgeInsets.zero,
-                    minimumSize: const Size(0, 32),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  icon: const Icon(Icons.my_location, size: 16),
-                  label: const Text('현재 위치로 설정'),
-                ),
-              ],
-            ],
+          child: Text(
+            message,
+            style: TextStyle(color: color, fontSize: 12, height: 1.35),
           ),
         ),
       ],
@@ -682,6 +680,8 @@ class _LostSearchPageState extends State<LostSearchPage> {
     ExpansibleController? controller,
     required IconData icon,
     required String title,
+    Widget? headerAccessory,
+    Widget? footerAccessory,
     required String hintText,
     required Set<String> selectedValues,
     required List<String> options,
@@ -690,7 +690,22 @@ class _LostSearchPageState extends State<LostSearchPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _sectionTitle(icon, title),
+        if (headerAccessory == null)
+          _sectionTitle(icon, title)
+        else
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              _sectionTitle(icon, title),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Align(
+                  alignment: Alignment.bottomRight,
+                  child: headerAccessory,
+                ),
+              ),
+            ],
+          ),
         const SizedBox(height: 8),
         Container(
           decoration: BoxDecoration(
@@ -745,12 +760,17 @@ class _LostSearchPageState extends State<LostSearchPage> {
             ],
           ),
         ),
+        if (footerAccessory != null) ...[
+          const SizedBox(height: 7),
+          footerAccessory,
+        ],
       ],
     );
   }
 
   Widget _sectionTitle(IconData icon, String title) {
     return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
         Icon(icon, size: 18, color: const Color(0xFF374151)),
         const SizedBox(width: 6),

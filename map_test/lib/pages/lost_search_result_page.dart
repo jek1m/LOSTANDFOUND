@@ -161,7 +161,7 @@ class _LostSearchResultPageState extends State<LostSearchResultPage> {
   Widget _resultHeader(int count) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
       decoration: const BoxDecoration(
         color: Colors.white,
         border: Border(bottom: BorderSide(color: Color(0xFFE5E7EB))),
@@ -169,6 +169,19 @@ class _LostSearchResultPageState extends State<LostSearchResultPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          const Text(
+            '선택된 필터',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF6B7280),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Wrap(spacing: 8, runSpacing: 8, children: _filterChips()),
+          const SizedBox(height: 18),
+          const Divider(height: 1, color: Color(0xFFE5E7EB)),
+          const SizedBox(height: 12),
           Row(
             children: [
               Expanded(
@@ -176,40 +189,63 @@ class _LostSearchResultPageState extends State<LostSearchResultPage> {
                   _hasMore ? '불러온 검색 결과 $count건' : '검색 결과 $count건',
                   style: const TextStyle(
                     fontSize: 16,
-                    fontWeight: FontWeight.bold,
+                    fontWeight: FontWeight.w700,
                     color: Color(0xFF111827),
                   ),
                 ),
               ),
-              DropdownButton<LostSearchSortOption>(
-                value: selectedSort,
-                underline: const SizedBox.shrink(),
-                items: LostSearchSortOption.values.map((option) {
-                  return DropdownMenuItem(
-                    value: option,
-                    child: Text(option.label),
-                  );
-                }).toList(),
-                onChanged: (option) async {
-                  if (option == null) {
-                    return;
-                  }
+              Container(
+                height: 38,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF9FAFB),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFE5E7EB)),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<LostSearchSortOption>(
+                    value: selectedSort,
+                    isDense: true,
+                    icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                    borderRadius: BorderRadius.circular(12),
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF374151),
+                    ),
+                    items: LostSearchSortOption.values.map((option) {
+                      return DropdownMenuItem(
+                        value: option,
+                        child: Text(option.label),
+                      );
+                    }).toList(),
+                    onChanged: (option) async {
+                      if (option == null) {
+                        return;
+                      }
 
-                  await _changeSort(option);
-                },
+                      await _changeSort(option);
+                    },
+                  ),
+                ),
               ),
             ],
           ),
-          const SizedBox(height: 8),
-          Wrap(spacing: 8, runSpacing: 8, children: _filterChips()),
           if (selectedSort == LostSearchSortOption.nearest &&
               _distanceReference != null) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
             InkWell(
               onTap: _chooseDistanceReference,
-              borderRadius: BorderRadius.circular(8),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
+              borderRadius: BorderRadius.circular(10),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEFF6FF),
+                  borderRadius: BorderRadius.circular(10),
+                ),
                 child: Row(
                   children: [
                     const Icon(
@@ -394,10 +430,17 @@ class _LostSearchResultPageState extends State<LostSearchResultPage> {
   Widget _chip(String label) {
     return Chip(
       label: Text(label),
-      backgroundColor: const Color(0xFFEAF2FF),
+      backgroundColor: const Color(0xFFEFF6FF),
+      side: const BorderSide(color: Color(0xFFBFDBFE)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+      labelPadding: const EdgeInsets.symmetric(horizontal: 8),
+      visualDensity: VisualDensity.compact,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
       labelStyle: const TextStyle(
         color: Color(0xFF2563EB),
-        fontWeight: FontWeight.w500,
+        fontSize: 14,
+        fontWeight: FontWeight.w600,
       ),
     );
   }
