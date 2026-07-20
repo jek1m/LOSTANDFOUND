@@ -1,0 +1,68 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "found_items",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "prdtClNmMg", "order": "ASCENDING" },
+        { "fieldPath": "fdYmd", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "found_items",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "sido", "order": "ASCENDING" },
+        { "fieldPath": "fdYmd", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "found_items",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "prdtClNmMg", "order": "ASCENDING" },
+        { "fieldPath": "sido", "order": "ASCENDING" },
+        { "fieldPath": "fdYmd", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "found_items",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "sido", "order": "ASCENDING" },
+        { "fieldPath": "sigungu", "order": "ASCENDING" },
+        { "fieldPath": "fdYmd", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "found_items",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "prdtClNmMg", "order": "ASCENDING" },
+        { "fieldPath": "sido", "order": "ASCENDING" },
+        { "fieldPath": "sigungu", "order": "ASCENDING" },
+        { "fieldPath": "fdYmd", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "found_items",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "sido", "order": "ASCENDING" },
+        { "fieldPath": "eupmyeondong", "order": "ASCENDING" },
+        { "fieldPath": "fdYmd", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "found_items",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "prdtClNmMg", "order": "ASCENDING" },
+        { "fieldPath": "sido", "order": "ASCENDING" },
+        { "fieldPath": "eupmyeondong", "order": "ASCENDING" },
+        { "fieldPath": "fdYmd", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}
