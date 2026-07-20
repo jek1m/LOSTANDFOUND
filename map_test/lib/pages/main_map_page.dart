@@ -1,7 +1,10 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:kakao_map_plugin/kakao_map_plugin.dart';
 
+import '../lost_models/lost_item.dart';
 import 'found_register_page.dart';
+import 'lost_item_detail_page.dart';
 import 'lost_search_page.dart';
 
 class MainMapPage extends StatefulWidget {
@@ -12,9 +15,74 @@ class MainMapPage extends StatefulWidget {
 }
 
 class _MainMapPageState extends State<MainMapPage> {
-  KakaoMapController? mapController;
+  KakaoMapController? _mapController;
+  bool _hasCenteredOnItems = false;
 
   final LatLng center = LatLng(37.5665, 126.9780); // 임시 중심 좌표
+
+  Stream<QuerySnapshot<Map<String, dynamic>>> get _foundItemsStream =>
+      FirebaseFirestore.instance.collection('found_items').snapshots();
+
+  List<Marker> _markersFromItems(List<LostItem> items) {
+    return items
+        .map(
+          (item) => Marker(
+            markerId: item.atcId,
+            latLng: LatLng(item.latitude!, item.longitude!),
+            width: 30,
+            height: 38,
+            infoWindowContent:
+                '<div style="padding:8px 12px;white-space:nowrap;">'
+                '${_escapeHtml(item.fdPrdtNm)}</div>',
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  void _openItemDetail(List<LostItem> items, String markerId) {
+    for (final item in items) {
+      if (item.atcId == markerId) {
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => LostItemDetailPage(item: item),
+          ),
+        );
+        return;
+      }
+    }
+  }
+
+  bool _hasValidLocation(LostItem item) {
+    final latitude = item.latitude;
+    final longitude = item.longitude;
+    return latitude != null &&
+        longitude != null &&
+        latitude >= -90 &&
+        latitude <= 90 &&
+        longitude >= -180 &&
+        longitude <= 180;
+  }
+
+  String _escapeHtml(String value) {
+    return value
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+  }
+
+  void _centerOnFirstItem(List<Marker> markers) {
+    if (_hasCenteredOnItems || markers.isEmpty || _mapController == null) {
+      return;
+    }
+
+    _hasCenteredOnItems = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _mapController?.setCenter(markers.first.latLng);
+      _mapController?.setLevel(5);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -46,10 +114,7 @@ class _MainMapPageState extends State<MainMapPage> {
                   SizedBox(height: 4),
                   Text(
                     '잃어버린 물건을 찾아드립니다',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Color(0xFF6B7280),
-                    ),
+                    style: TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
                   ),
                 ],
               ),
@@ -60,13 +125,30 @@ class _MainMapPageState extends State<MainMapPage> {
               child: Stack(
                 children: [
                   // 실제 카카오맵
-                  SizedBox(
-                    width: double.infinity,
-                    height: double.infinity,
-                    child: KakaoMap(
-                      center: center,
-                      onMapCreated: (controller) {
-                        mapController = controller;
+                  Positioned.fill(
+                    child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                      stream: _foundItemsStream,
+                      builder: (context, snapshot) {
+                        final items = snapshot.hasData
+                            ? snapshot.data!.docs
+                                  .map(LostItem.fromDoc)
+                                  .where(_hasValidLocation)
+                                  .toList(growable: false)
+                            : <LostItem>[];
+                        final markers = _markersFromItems(items);
+                        _centerOnFirstItem(markers);
+
+                        return KakaoMap(
+                          center: center,
+                          markers: markers,
+                          onMapCreated: (controller) {
+                            _mapController = controller;
+                            _centerOnFirstItem(markers);
+                          },
+                          onMarkerTap: (markerId, _, _) {
+                            _openItemDetail(items, markerId);
+                          },
+                        );
                       },
                     ),
                   ),
@@ -109,7 +191,8 @@ class _MainMapPageState extends State<MainMapPage> {
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                  builder: (context) => const FoundRegisterPage(),
+                                  builder: (context) =>
+                                      const FoundRegisterPage(),
                                 ),
                               );
                             },
