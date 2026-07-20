@@ -60,8 +60,7 @@ class FoundRegisterPage extends StatefulWidget {
 }
 
 class _FoundRegisterPageState extends State<FoundRegisterPage> {
-  FoundItemAiService get _aiService =>
-    widget.aiService ?? FoundItemAiService();
+  FoundItemAiService get _aiService => widget.aiService ?? FoundItemAiService();
   final _imagePicker = ImagePicker();
   final _itemNameController = TextEditingController(
     text: '\uac80\uc815 \uac00\ubc29',
@@ -142,11 +141,9 @@ class _FoundRegisterPageState extends State<FoundRegisterPage> {
     final image = _selectedImage;
 
     if (image == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('사진을 먼저 등록해 주세요.'),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('사진을 먼저 등록해 주세요.')));
       return;
     }
 
@@ -171,7 +168,7 @@ class _FoundRegisterPageState extends State<FoundRegisterPage> {
         }
 
         if (result.description.trim().isNotEmpty) {
-         _descriptionController.text = result.description.trim();
+          _descriptionController.text = result.description.trim();
         }
 
         _step = _RegisterStep.confirm;
@@ -183,11 +180,9 @@ class _FoundRegisterPageState extends State<FoundRegisterPage> {
 
       setState(() => _step = _RegisterStep.photo);
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('AI 분석 중 오류가 발생했습니다: $e'),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('AI 분석 중 오류가 발생했습니다: $e')));
     }
   }
 
@@ -242,9 +237,7 @@ class _FoundRegisterPageState extends State<FoundRegisterPage> {
       password: _passwordController.text.trim(),
       latitude: _selectedLocationLatLng?.latitude,
       longitude: _selectedLocationLatLng?.longitude,
-      sido: _useMapLocation
-          ? _sido
-          : _normalizeSido(_selectedRegion),
+      sido: _useMapLocation ? _sido : _normalizeSido(_selectedRegion),
       sigungu: _useMapLocation ? _sigungu : _selectedDistrict,
       eupmyeondong: _useMapLocation ? _eupmyeondong : '',
     );
@@ -268,11 +261,9 @@ class _FoundRegisterPageState extends State<FoundRegisterPage> {
         return;
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('등록 중 문제가 발생했습니다: $e'),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('등록 중 문제가 발생했습니다: $e')));
     } finally {
       if (mounted) {
         setState(() => _isSubmitting = false);
@@ -967,33 +958,59 @@ class _LocationStepState extends State<_LocationStep> {
 
     setState(() => _isResolvingAddress = true);
 
-    final controller = _mapController;
-    final selectedCenter = _selectedCenter;
-    if (controller == null && selectedCenter == null) {
-      setState(() => _isResolvingAddress = false);
-      return;
+    try {
+      final controller = _mapController;
+      final selectedCenter = _selectedCenter;
+      if (controller == null && selectedCenter == null) {
+        return;
+      }
+
+      final center = controller == null
+          ? selectedCenter!
+          : await controller
+                .getCenter()
+                .timeout(
+                  const Duration(seconds: 2),
+                  onTimeout: () => selectedCenter!,
+                )
+                .catchError((_) => selectedCenter!);
+
+      final labelFuture = _resolveAddress(center);
+      final regionFuture = _resolveRegion(center);
+      final label = await labelFuture;
+      final region = await regionFuture;
+
+      if (!mounted) {
+        return;
+      }
+
+      widget.onPickLocation(
+        _LocationSelection(
+          latLng: center,
+          label: label,
+          sido: region.sido,
+          sigungu: region.sigungu,
+          eupmyeondong: region.eupmyeondong,
+        ),
+      );
+    } catch (_) {
+      final center = _selectedCenter;
+      if (mounted && center != null) {
+        widget.onPickLocation(
+          _LocationSelection(
+            latLng: center,
+            label: _latLngLabel(center),
+            sido: '',
+            sigungu: '',
+            eupmyeondong: '',
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isResolvingAddress = false);
+      }
     }
-
-    final center = controller == null
-        ? selectedCenter!
-        : await controller.getCenter().catchError((_) => selectedCenter!);
-    final label = await _resolveAddress(center);
-    final region = await _resolveRegion(center);
-
-    if (!mounted) {
-      return;
-    }
-
-    setState(() => _isResolvingAddress = false);
-    widget.onPickLocation(
-      _LocationSelection(
-        latLng: center,
-        label: label,
-        sido: region.sido,
-        sigungu: region.sigungu,
-        eupmyeondong: region.eupmyeondong,
-      ),
-    );
   }
 
   Future<_RegionSelection> _resolveRegion(LatLng latLng) async {
@@ -1003,12 +1020,11 @@ class _LocationStepState extends State<_LocationStep> {
     }
 
     try {
-      final response = await controller.coord2RegionCode(
-        Coord2RegionCodeRequest(
-          x: latLng.longitude,
-          y: latLng.latitude,
-        ),
-      );
+      final response = await controller
+          .coord2RegionCode(
+            Coord2RegionCodeRequest(x: latLng.longitude, y: latLng.latitude),
+          )
+          .timeout(const Duration(seconds: 3));
 
       Coord2RegionCode? selectedRegion;
 
@@ -1040,9 +1056,11 @@ class _LocationStepState extends State<_LocationStep> {
     }
 
     try {
-      final response = await controller.coord2Address(
-        Coord2AddressRequest(x: latLng.longitude, y: latLng.latitude),
-      );
+      final response = await controller
+          .coord2Address(
+            Coord2AddressRequest(x: latLng.longitude, y: latLng.latitude),
+          )
+          .timeout(const Duration(seconds: 3));
 
       if (response.list.isNotEmpty) {
         final address = response.list.first;
@@ -1092,16 +1110,6 @@ class _LocationStepState extends State<_LocationStep> {
                 onCameraIdle: (latLng, _) {
                   setState(() => _selectedCenter = latLng);
                 },
-                markers: _currentLocation == null
-                    ? null
-                    : [
-                        Marker(
-                          markerId: 'current-location',
-                          latLng: _currentLocation!,
-                          width: 24,
-                          height: 24,
-                        ),
-                      ],
                 gestureRecognizers: {
                   Factory<OneSequenceGestureRecognizer>(
                     () => EagerGestureRecognizer(),
