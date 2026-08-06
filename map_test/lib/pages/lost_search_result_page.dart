@@ -5,6 +5,7 @@ import 'package:kakao_map_plugin/kakao_map_plugin.dart';
 
 import '../lost_models/lost_item.dart';
 import '../lost_models/lost_search_filter.dart';
+import '../utils/current_position.dart';
 import 'distance_reference_map_page.dart';
 
 enum _DistanceReferenceChoice { currentLocation, map }
@@ -386,11 +387,7 @@ class _LostSearchResultPageState extends State<LostSearchResultPage> {
         return null;
       }
 
-      final position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-        ),
-      );
+      final position = await getReliableCurrentPosition();
       return DistanceReference(
         location: LatLng(position.latitude, position.longitude),
         label: '현재 위치',
@@ -497,7 +494,9 @@ class _LostSearchResultPageState extends State<LostSearchResultPage> {
         query = query.startAfterDocument(lastDocument);
       }
 
-      final QuerySnapshot<Map<String, dynamic>> snapshot = await query.get();
+      final QuerySnapshot<Map<String, dynamic>> snapshot = await query.get(
+        const GetOptions(source: Source.server),
+      );
       final List<LostItem> newItems = snapshot.docs
           .map(LostItem.fromDoc)
           .where(_matchesFilter)
@@ -520,11 +519,30 @@ class _LostSearchResultPageState extends State<LostSearchResultPage> {
         return;
       }
       setState(() {
-        _loadError = error;
+        _loadError = _searchErrorMessage(error);
         _isInitialLoading = false;
         _isLoadingMore = false;
       });
     }
+  }
+
+  String _searchErrorMessage(Object error) {
+    if (error is FirebaseException) {
+      switch (error.code) {
+        case 'unavailable':
+          return '서버에 연결하지 못했습니다. 인터넷 연결을 확인한 뒤 다시 시도해 주세요.';
+        case 'resource-exhausted':
+          return '현재 검색 요청이 많습니다. 잠시 후 다시 시도해 주세요.';
+        case 'permission-denied':
+          return '검색 데이터에 접근할 권한이 없습니다. Firestore 보안 규칙을 확인해 주세요.';
+        case 'failed-precondition':
+          return '검색에 필요한 Firestore 색인이 준비되지 않았습니다.';
+        case 'deadline-exceeded':
+          return '서버 응답 시간이 초과되었습니다. 다시 시도해 주세요.';
+      }
+      return 'Firestore 검색 오류가 발생했습니다. (${error.code})';
+    }
+    return '검색 결과를 불러오는 중 오류가 발생했습니다. 다시 시도해 주세요.';
   }
 
   Query<Map<String, dynamic>> _buildQuery() {

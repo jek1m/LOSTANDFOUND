@@ -5,6 +5,7 @@ import 'package:geolocator/geolocator.dart';
 
 import '../lost_models/lost_search_filter.dart';
 import '../lost_models/korean_administrative_regions.dart';
+import '../utils/current_position.dart';
 import '../widgets/date_range_bottom_sheet.dart';
 import 'lost_search_result_page.dart';
 
@@ -161,15 +162,17 @@ class _LostSearchPageState extends State<LostSearchPage> {
     try {
       final customDetector = widget.regionDetector;
       if (customDetector != null) {
-        final detected = await customDetector(
-          requestPermission: requestPermission,
-        );
-        if (detected == null) {
-          _finishLocationLookup(requestId, '현재 위치의 지역명을 확인하지 못했어요.');
-          return;
+        try {
+          final detected = await customDetector(
+            requestPermission: requestPermission,
+          );
+          if (detected != null) {
+            _applyDetectedRegion(requestId, detected.region, detected.subregion);
+            return;
+          }
+        } catch (_) {
+          // 메인 지도의 주소 변환이 실패하면 아래의 기기 위치 조회를 사용한다.
         }
-        _applyDetectedRegion(requestId, detected.region, detected.subregion);
-        return;
       }
 
       if (kIsWeb) {
@@ -206,11 +209,7 @@ class _LostSearchPageState extends State<LostSearchPage> {
         return;
       }
 
-      final position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.medium,
-        ),
-      ).timeout(const Duration(seconds: 15));
+      final position = await getReliableCurrentPosition();
 
       final placemarks = await Geocoding(locale: const Locale('ko', 'KR'))
           .placemarkFromCoordinates(position.latitude, position.longitude)
