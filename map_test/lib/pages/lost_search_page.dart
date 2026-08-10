@@ -24,10 +24,12 @@ class LostSearchPage extends StatefulWidget {
     super.key,
     this.autoDetectLocation = true,
     this.regionDetector,
+    this.initialDetectedRegion,
   });
 
   final bool autoDetectLocation;
   final SearchRegionDetector? regionDetector;
+  final DetectedSearchRegion? initialDetectedRegion;
 
   @override
   State<LostSearchPage> createState() => _LostSearchPageState();
@@ -96,7 +98,12 @@ class _LostSearchPageState extends State<LostSearchPage> {
   void initState() {
     super.initState();
     selectedDateRange = _recentThreeDays();
-    if (widget.autoDetectLocation && !kIsWeb) {
+    final initialRegion = widget.initialDetectedRegion;
+    if (initialRegion != null) {
+      selectedRegion = initialRegion.region;
+      selectedSubregion = initialRegion.subregion;
+      _isUsingCurrentLocation = true;
+    } else if (widget.autoDetectLocation && !kIsWeb) {
       _setRegionFromCurrentLocation(requestPermission: false);
     }
   }

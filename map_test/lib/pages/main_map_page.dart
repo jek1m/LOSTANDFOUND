@@ -1,4 +1,4 @@
-import 'dart:math' as math;
+import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
@@ -19,25 +19,31 @@ class MainMapPage extends StatefulWidget {
   State<MainMapPage> createState() => _MainMapPageState();
 }
 
+class _ItemLocationGroup {
+  const _ItemLocationGroup({required this.location, required this.items});
+
+  final LatLng location;
+  final List<LostItem> items;
+}
+
 class _MainMapPageState extends State<MainMapPage> {
-  static const int _mapQueryReadLimit = 80;
+  static const int _mapQueryReadLimit = 100;
   static const int _mapDisplayLimit = 50;
-  static const List<double> _nearbyRadiusOptions = [3000, 5000];
-  static const String _nearbyRadiusCircleId = '__nearby_radius__';
   static const String _currentLocationMarkerId = '__current_location__';
   static const double _mapControlWidth = 48;
-  static const String _lostItemMarkerImage =
-      'data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20width=%2232%22%20height=%2240%22%20viewBox=%220%200%2032%2040%22%3E%3Cpath%20d=%22M16%201C7.72%201%201%207.72%201%2016c0%2010.8%2015%2023%2015%2023s15-12.2%2015-23C31%207.72%2024.28%201%2016%201z%22%20fill=%22%23FACC15%22%20stroke=%22%23A16207%22%20stroke-width=%222%22/%3E%3Ccircle%20cx=%2216%22%20cy=%2216%22%20r=%226%22%20fill=%22%23FFF7CC%22/%3E%3C/svg%3E';
+  static const String _currentLocationMarkerImage =
+      'data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20width=%2232%22%20height=%2240%22%20viewBox=%220%200%2032%2040%22%3E%3Cpath%20d=%22M16%201C7.72%201%201%207.72%201%2016c0%2010.8%2015%2023%2015%2023s15-12.2%2015-23C31%207.72%2024.28%201%2016%201z%22%20fill=%22%232563EB%22%20stroke=%22%231D4ED8%22%20stroke-width=%222%22/%3E%3Ccircle%20cx=%2216%22%20cy=%2216%22%20r=%226%22%20fill=%22%23DBEAFE%22/%3E%3C/svg%3E';
 
   KakaoMapController? _mapController;
   LatLng? _currentLocation;
-  double _nearbyRadiusMeters = _nearbyRadiusOptions.first;
   bool _isLoadingLocation = true;
   bool _isLoadingItems = false;
   String? _locationMessage;
   String? _itemsMessage;
   List<LostItem> _nearbyItems = const [];
   int _nearbyRequestId = 0;
+  int _mapInstanceId = 0;
+  Timer? _viewportDebounce;
 
   final LatLng _fallbackCenter = LatLng(37.5665, 126.9780);
 
@@ -89,7 +95,6 @@ class _MainMapPageState extends State<MainMapPage> {
         _locationMessage = null;
       });
       _moveToCurrentLocation();
-      await _loadNearbyItems();
     } catch (_) {
       _setLocationFailure('현재 위치를 가져오지 못했습니다. 다시 시도해 주세요.');
     }
@@ -112,7 +117,20 @@ class _MainMapPageState extends State<MainMapPage> {
       return;
     }
     _mapController?.setCenter(location);
-    _mapController?.fitBounds(_nearbyRadiusBounds(location));
+  }
+
+  Future<void> _restoreMapAfterNavigation() async {
+    if (!mounted) {
+      return;
+    }
+
+    // KakaoMap의 웹뷰 컨트롤러는 다른 페이지를 다녀온 뒤 유효하지 않을 수 있다.
+    // 새 지도 인스턴스를 만들고, 위치와 마커 데이터를 다시 적용한다.
+    setState(() {
+      _mapController = null;
+      _mapInstanceId++;
+    });
+    await _loadCurrentLocation();
   }
 
   Future<void> _zoomIn() async {
@@ -137,24 +155,26 @@ class _MainMapPageState extends State<MainMapPage> {
     }
   }
 
-  Future<void> _changeNearbyRadius(double radius) async {
-    if (_nearbyRadiusMeters == radius) {
-      return;
-    }
-    setState(() {
-      _nearbyRadiusMeters = radius;
+  void _onCameraIdle() {
+    _viewportDebounce?.cancel();
+    _viewportDebounce = Timer(const Duration(milliseconds: 400), () async {
+      final controller = _mapController;
+      if (controller == null) {
+        return;
+      }
+      await _loadVisibleItems(await controller.getBounds());
     });
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _moveToCurrentLocation();
-    });
-    await _loadNearbyItems();
   }
 
-  Future<void> _loadNearbyItems() async {
-    final location = _currentLocation;
-    if (location == null) {
+  Future<void> _refreshVisibleItems() async {
+    final controller = _mapController;
+    if (controller == null) {
       return;
     }
+    await _loadVisibleItems(await controller.getBounds());
+  }
+
+  Future<void> _loadVisibleItems(LatLngBounds bounds) async {
 
     final requestId = ++_nearbyRequestId;
     setState(() {
@@ -163,38 +183,39 @@ class _MainMapPageState extends State<MainMapPage> {
     });
 
     try {
-      final ranges = geohashQueryRanges(
-        latitude: location.latitude,
-        longitude: location.longitude,
-        radiusMeters: _nearbyRadiusMeters,
+      final southWest = bounds.getSouthWest();
+      final northEast = bounds.getNorthEast();
+      final centerLatitude = (southWest.latitude + northEast.latitude) / 2;
+      final centerLongitude = (southWest.longitude + northEast.longitude) / 2;
+      final radiusMeters = Geolocator.distanceBetween(
+        centerLatitude,
+        centerLongitude,
+        northEast.latitude,
+        northEast.longitude,
       );
-      final documents =
-          <String, QueryDocumentSnapshot<Map<String, dynamic>>>{};
-      var remainingReadLimit = _mapQueryReadLimit;
-
-      for (var index = 0;
-          index < ranges.length && remainingReadLimit > 0;
-          index++) {
-        final remainingRanges = ranges.length - index;
-        final rangeReadLimit = (remainingReadLimit / remainingRanges).ceil();
-        final range = ranges[index];
-        final snapshot = await FirebaseFirestore.instance
-            .collection('found_items')
-            .orderBy('geohash')
-            .startAt([range.start])
-            .endBefore([range.end])
-            .limit(rangeReadLimit)
-            .get();
-
-        for (final document in snapshot.docs) {
-          documents[document.id] = document;
-        }
-        remainingReadLimit -= snapshot.docs.length;
-      }
-
+      final ranges = geohashQueryRanges(
+        latitude: centerLatitude,
+        longitude: centerLongitude,
+        radiusMeters: radiusMeters,
+      );
+      final snapshots = await Future.wait(
+        ranges.map(
+          (range) => FirebaseFirestore.instance
+              .collection('found_items')
+              .orderBy('geohash')
+              .startAt([range.start])
+              .endBefore([range.end])
+              .limit(_mapQueryReadLimit)
+              .get(),
+        ),
+      );
+      final documents = <String, QueryDocumentSnapshot<Map<String, dynamic>>>{
+        for (final snapshot in snapshots)
+          for (final document in snapshot.docs) document.id: document,
+      };
       final items = documents.values
           .map(LostItem.fromDoc)
-          .where(_isNearby)
+          .where((item) => _isWithinBounds(item, bounds))
           .toList(growable: false)
         ..sort((a, b) {
           final aDate = a.fdYmd ?? DateTime.fromMillisecondsSinceEpoch(0);
@@ -206,6 +227,8 @@ class _MainMapPageState extends State<MainMapPage> {
         return;
       }
 
+      // 플러그인은 빈 마커 목록으로 갱신될 때 이전 마커를 자동 제거하지 않는다.
+      _mapController?.clearMarker();
       setState(() {
         _nearbyItems = items.take(_mapDisplayLimit).toList(growable: false);
         _isLoadingItems = false;
@@ -280,43 +303,6 @@ class _MainMapPageState extends State<MainMapPage> {
     return aliases[region] ?? region;
   }
 
-  List<LatLng> _nearbyRadiusBounds(LatLng center) {
-    const metersPerLatitudeDegree = 111320.0;
-    final latitudeDelta = _nearbyRadiusMeters / metersPerLatitudeDegree;
-    final latitudeRadians = center.latitude * math.pi / 180;
-    final longitudeDelta =
-        _nearbyRadiusMeters /
-        (metersPerLatitudeDegree * math.cos(latitudeRadians));
-
-    return [
-      LatLng(center.latitude + latitudeDelta, center.longitude),
-      LatLng(center.latitude - latitudeDelta, center.longitude),
-      LatLng(center.latitude, center.longitude + longitudeDelta),
-      LatLng(center.latitude, center.longitude - longitudeDelta),
-    ];
-  }
-
-  List<Circle> _nearbyRadiusCircle() {
-    final location = _currentLocation;
-    if (location == null) {
-      return const [];
-    }
-
-    return [
-      Circle(
-        circleId: _nearbyRadiusCircleId,
-        center: location,
-        radius: _nearbyRadiusMeters,
-        strokeWidth: 2,
-        strokeColor: const Color(0xFF2563EB),
-        strokeOpacity: 0.75,
-        fillColor: const Color(0xFF60A5FA),
-        fillOpacity: 0.13,
-        zIndex: 1,
-      ),
-    ];
-  }
-
   Marker? _currentLocationMarker() {
     final location = _currentLocation;
     if (location == null) {
@@ -326,39 +312,91 @@ class _MainMapPageState extends State<MainMapPage> {
     return Marker(
       markerId: _currentLocationMarkerId,
       latLng: location,
+      width: 32,
+      height: 40,
+      markerImageSrc: _currentLocationMarkerImage,
       zIndex: 100,
     );
   }
 
   List<Marker> _markersFromItems(List<LostItem> items) {
-    return items
+    final groups = _itemLocationGroups(items);
+    return groups.asMap().entries
         .map(
-          (item) => Marker(
-            markerId: item.atcId,
-            latLng: LatLng(item.latitude!, item.longitude!),
-            width: 32,
-            height: 40,
-            markerImageSrc: _lostItemMarkerImage,
+          (entry) => Marker(
+            markerId: '__lost_location_${entry.key}',
+            latLng: entry.value.location,
             zIndex: 50,
-            infoWindowContent:
-                '<div style="padding:8px 12px;white-space:nowrap;">'
-                '${_escapeHtml(item.fdPrdtNm)}</div>',
           ),
         )
         .toList(growable: false);
   }
 
-  void _openItemDetail(List<LostItem> items, String markerId) {
+  List<_ItemLocationGroup> _itemLocationGroups(List<LostItem> items) {
+    final groupedItems = <String, List<LostItem>>{};
     for (final item in items) {
-      if (item.atcId == markerId) {
-        Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (_) => LostItemDetailPage(item: item),
-          ),
-        );
-        return;
-      }
+      final key = '${item.latitude!.toStringAsFixed(6)},'
+          '${item.longitude!.toStringAsFixed(6)}';
+      groupedItems.putIfAbsent(key, () => []).add(item);
     }
+    return groupedItems.values
+        .map(
+          (group) => _ItemLocationGroup(
+            location: LatLng(group.first.latitude!, group.first.longitude!),
+            items: group,
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  void _openItemLocationGroup(List<LostItem> items, String markerId) {
+    const markerPrefix = '__lost_location_';
+    if (!markerId.startsWith(markerPrefix)) {
+      return;
+    }
+    final index = int.tryParse(markerId.substring(markerPrefix.length));
+    final groups = _itemLocationGroups(items);
+    if (index == null || index < 0 || index >= groups.length) {
+      return;
+    }
+
+    final group = groups[index];
+    if (group.items.length == 1) {
+      _openItemDetail(group.items.first);
+      return;
+    }
+
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: ListView.builder(
+          shrinkWrap: true,
+          itemCount: group.items.length + 1,
+          itemBuilder: (context, itemIndex) {
+            if (itemIndex == 0) {
+              return ListTile(
+                title: Text('이 위치의 습득물 ${group.items.length}개'),
+              );
+            }
+            final item = group.items[itemIndex - 1];
+            return ListTile(
+              title: Text(item.fdPrdtNm),
+              subtitle: Text(item.fndPlace ?? ''),
+              onTap: () {
+                Navigator.pop(context);
+                _openItemDetail(item);
+              },
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  void _openItemDetail(LostItem item) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => LostItemDetailPage(item: item)),
+    );
   }
 
   bool _hasValidLocation(LostItem item) {
@@ -372,28 +410,22 @@ class _MainMapPageState extends State<MainMapPage> {
         longitude <= 180;
   }
 
-  bool _isNearby(LostItem item) {
-    final location = _currentLocation;
-    if (location == null || !_hasValidLocation(item)) {
+  bool _isWithinBounds(LostItem item, LatLngBounds bounds) {
+    if (!_hasValidLocation(item)) {
       return false;
     }
-
-    final distance = Geolocator.distanceBetween(
-      location.latitude,
-      location.longitude,
-      item.latitude!,
-      item.longitude!,
-    );
-    return distance <= _nearbyRadiusMeters;
+    final southWest = bounds.getSouthWest();
+    final northEast = bounds.getNorthEast();
+    return item.latitude! >= southWest.latitude &&
+        item.latitude! <= northEast.latitude &&
+        item.longitude! >= southWest.longitude &&
+        item.longitude! <= northEast.longitude;
   }
 
-  String _escapeHtml(String value) {
-    return value
-        .replaceAll('&', '&amp;')
-        .replaceAll('<', '&lt;')
-        .replaceAll('>', '&gt;')
-        .replaceAll('"', '&quot;')
-        .replaceAll("'", '&#39;');
+  @override
+  void dispose() {
+    _viewportDebounce?.cancel();
+    super.dispose();
   }
 
   @override
@@ -439,8 +471,8 @@ class _MainMapPageState extends State<MainMapPage> {
                   // 실제 카카오맵
                   Positioned.fill(
                     child: KakaoMap(
+                      key: ValueKey('main-kakao-map-$_mapInstanceId'),
                       center: _currentLocation ?? _fallbackCenter,
-                      circles: _nearbyRadiusCircle(),
                       markers: [
                         ?_currentLocationMarker(),
                         ..._markersFromItems(_nearbyItems),
@@ -452,8 +484,9 @@ class _MainMapPageState extends State<MainMapPage> {
                         }
                       },
                       onMarkerTap: (markerId, _, _) {
-                        _openItemDetail(_nearbyItems, markerId);
+                        _openItemLocationGroup(_nearbyItems, markerId);
                       },
+                      onCameraIdle: (_, _) => _onCameraIdle(),
                     ),
                   ),
 
@@ -502,9 +535,10 @@ class _MainMapPageState extends State<MainMapPage> {
                           dimension: _mapControlWidth,
                           child: FloatingActionButton(
                             heroTag: 'move_to_current_location',
-                            onPressed: _isLoadingLocation
+                            onPressed:
+                                _isLoadingLocation || _currentLocation == null
                                 ? null
-                                : _loadCurrentLocation,
+                                : _moveToCurrentLocation,
                             backgroundColor: Colors.white,
                             foregroundColor: const Color(0xFF2563EB),
                             tooltip: '내 위치로 이동',
@@ -538,16 +572,31 @@ class _MainMapPageState extends State<MainMapPage> {
                               Color(0xFFB000F5),
                               Color(0xFF7C3AED),
                             ],
-                            onTap: () {
-                              Navigator.push(
+                            onTap: () async {
+                              DetectedSearchRegion? initialRegion;
+                              try {
+                                initialRegion =
+                                    await _detectSearchRegionWithKakaoMap(
+                                  requestPermission: false,
+                                );
+                              } catch (_) {
+                                // 검색 화면에서 기기 위치 기반 자동 설정을 한 번 더 시도한다.
+                              }
+                              if (!mounted) {
+                                return;
+                              }
+                              await Navigator.push(
                                 context,
                                 MaterialPageRoute(
                                   builder: (context) => LostSearchPage(
+                                    initialDetectedRegion: initialRegion,
+                                    autoDetectLocation: initialRegion == null,
                                     regionDetector:
                                         _detectSearchRegionWithKakaoMap,
                                   ),
                                 ),
                               );
+                              await _restoreMapAfterNavigation();
                             },
                           ),
                         ),
@@ -560,14 +609,15 @@ class _MainMapPageState extends State<MainMapPage> {
                               Color(0xFF2563EB),
                               Color(0xFF1D4ED8),
                             ],
-                            onTap: () {
-                              Navigator.push(
+                            onTap: () async {
+                              await Navigator.push(
                                 context,
                                 MaterialPageRoute(
                                   builder: (context) =>
                                       const FoundRegisterPage(),
                                 ),
                               );
+                              await _restoreMapAfterNavigation();
                             },
                           ),
                         ),
@@ -627,7 +677,7 @@ class _MainMapPageState extends State<MainMapPage> {
             const SizedBox(width: 8),
             Expanded(child: Text(itemsMessage)),
             TextButton(
-              onPressed: _loadNearbyItems,
+              onPressed: _refreshVisibleItems,
               child: const Text('재시도'),
             ),
           ],
@@ -635,7 +685,45 @@ class _MainMapPageState extends State<MainMapPage> {
       );
     }
 
-    final radiusKm = (_nearbyRadiusMeters / 1000).round();
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _mapStatusCard(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.map_outlined, size: 18, color: Color(0xFF2563EB)),
+                const SizedBox(width: 7),
+                Text(
+                  '현재 지도 영역 · ${_nearbyItems.length}개',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          _mapStatusCard(
+            child: InkWell(
+              onTap: _isLoadingItems || _isLoadingLocation
+                  ? null
+                  : _refreshVisibleItems,
+              child: _isLoadingItems
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.refresh, size: 18),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /*
     return Align(
       alignment: Alignment.centerLeft,
       child: Row(
@@ -701,6 +789,7 @@ class _MainMapPageState extends State<MainMapPage> {
     );
   }
 
+  */
   Widget _mapStatusCard({required Widget child}) {
     return Material(
       color: Colors.white,
