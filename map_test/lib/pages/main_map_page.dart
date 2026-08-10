@@ -33,6 +33,10 @@ class _MainMapPageState extends State<MainMapPage> {
   static const double _mapControlWidth = 48;
   static const String _currentLocationMarkerImage =
       'data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20width=%2232%22%20height=%2240%22%20viewBox=%220%200%2032%2040%22%3E%3Cpath%20d=%22M16%201C7.72%201%201%207.72%201%2016c0%2010.8%2015%2023%2015%2023s15-12.2%2015-23C31%207.72%2024.28%201%2016%201z%22%20fill=%22%232563EB%22%20stroke=%22%231D4ED8%22%20stroke-width=%222%22/%3E%3Ccircle%20cx=%2216%22%20cy=%2216%22%20r=%226%22%20fill=%22%23DBEAFE%22/%3E%3C/svg%3E';
+  static const String _policeMarkerImage =
+      'data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20width=%2232%22%20height=%2240%22%20viewBox=%220%200%2032%2040%22%3E%3Cpath%20d=%22M16%201C7.72%201%201%207.72%201%2016c0%2010.8%2015%2023%2015%2023s15-12.2%2015-23C31%207.72%2024.28%201%2016%201z%22%20fill=%22%230F766E%22%20stroke=%22%23FFFFFF%22%20stroke-width=%222%22/%3E%3Ccircle%20cx=%2216%22%20cy=%2216%22%20r=%225%22%20fill=%22%23FFFFFF%22/%3E%3C/svg%3E';
+  static const String _appMarkerImage =
+      'data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20width=%2232%22%20height=%2240%22%20viewBox=%220%200%2032%2040%22%3E%3Cpath%20d=%22M16%201C7.72%201%201%207.72%201%2016c0%2010.8%2015%2023%2015%2023s15-12.2%2015-23C31%207.72%2024.28%201%2016%201z%22%20fill=%22%23F97316%22%20stroke=%22%23FFFFFF%22%20stroke-width=%222%22/%3E%3Ccircle%20cx=%2216%22%20cy=%2216%22%20r=%225%22%20fill=%22%23FFFFFF%22/%3E%3C/svg%3E';
 
   KakaoMapController? _mapController;
   LatLng? _currentLocation;
@@ -175,7 +179,6 @@ class _MainMapPageState extends State<MainMapPage> {
   }
 
   Future<void> _loadVisibleItems(LatLngBounds bounds) async {
-
     final requestId = ++_nearbyRequestId;
     setState(() {
       _isLoadingItems = true;
@@ -213,15 +216,16 @@ class _MainMapPageState extends State<MainMapPage> {
         for (final snapshot in snapshots)
           for (final document in snapshot.docs) document.id: document,
       };
-      final items = documents.values
-          .map(LostItem.fromDoc)
-          .where((item) => _isWithinBounds(item, bounds))
-          .toList(growable: false)
-        ..sort((a, b) {
-          final aDate = a.fdYmd ?? DateTime.fromMillisecondsSinceEpoch(0);
-          final bDate = b.fdYmd ?? DateTime.fromMillisecondsSinceEpoch(0);
-          return bDate.compareTo(aDate);
-        });
+      final items =
+          documents.values
+              .map(LostItem.fromDoc)
+              .where((item) => _isWithinBounds(item, bounds))
+              .toList(growable: false)
+            ..sort((a, b) {
+              final aDate = a.fdYmd ?? DateTime.fromMillisecondsSinceEpoch(0);
+              final bDate = b.fdYmd ?? DateTime.fromMillisecondsSinceEpoch(0);
+              return bDate.compareTo(aDate);
+            });
 
       if (!mounted || requestId != _nearbyRequestId) {
         return;
@@ -321,11 +325,18 @@ class _MainMapPageState extends State<MainMapPage> {
 
   List<Marker> _markersFromItems(List<LostItem> items) {
     final groups = _itemLocationGroups(items);
-    return groups.asMap().entries
+    return groups
+        .asMap()
+        .entries
         .map(
           (entry) => Marker(
             markerId: '__lost_location_${entry.key}',
             latLng: entry.value.location,
+            width: 32,
+            height: 40,
+            markerImageSrc: entry.value.items.first.isAppRegistered
+                ? _appMarkerImage
+                : _policeMarkerImage,
             zIndex: 50,
           ),
         )
@@ -335,7 +346,8 @@ class _MainMapPageState extends State<MainMapPage> {
   List<_ItemLocationGroup> _itemLocationGroups(List<LostItem> items) {
     final groupedItems = <String, List<LostItem>>{};
     for (final item in items) {
-      final key = '${item.latitude!.toStringAsFixed(6)},'
+      final key =
+          '${item.latitude!.toStringAsFixed(6)},'
           '${item.longitude!.toStringAsFixed(6)}';
       groupedItems.putIfAbsent(key, () => []).add(item);
     }
@@ -374,9 +386,7 @@ class _MainMapPageState extends State<MainMapPage> {
           itemCount: group.items.length + 1,
           itemBuilder: (context, itemIndex) {
             if (itemIndex == 0) {
-              return ListTile(
-                title: Text('이 위치의 습득물 ${group.items.length}개'),
-              );
+              return ListTile(title: Text('이 위치의 습득물 ${group.items.length}개'));
             }
             final item = group.items[itemIndex - 1];
             return ListTile(
@@ -577,8 +587,8 @@ class _MainMapPageState extends State<MainMapPage> {
                               try {
                                 initialRegion =
                                     await _detectSearchRegionWithKakaoMap(
-                                  requestPermission: false,
-                                );
+                                      requestPermission: false,
+                                    );
                               } catch (_) {
                                 // 검색 화면에서 기기 위치 기반 자동 설정을 한 번 더 시도한다.
                               }
@@ -694,7 +704,11 @@ class _MainMapPageState extends State<MainMapPage> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.map_outlined, size: 18, color: Color(0xFF2563EB)),
+                const Icon(
+                  Icons.map_outlined,
+                  size: 18,
+                  color: Color(0xFF2563EB),
+                ),
                 const SizedBox(width: 7),
                 Text(
                   '현재 지도 영역 · ${_nearbyItems.length}개',

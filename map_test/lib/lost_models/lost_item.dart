@@ -37,6 +37,10 @@ class LostItem {
   final String? sigungu;
   final String? eupmyeondong;
 
+  /// Whether this item was registered directly through this app.
+  /// Police records use pol; only explicit user values use the app marker.
+  bool get isAppRegistered => polUse?.toLowerCase() == 'user';
+
   factory LostItem.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
     final Map<String, dynamic> data = doc.data() ?? {};
 
