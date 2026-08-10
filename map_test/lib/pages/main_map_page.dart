@@ -458,7 +458,7 @@ class _MainMapPageState extends State<MainMapPage> {
               child: const Column(
                 children: [
                   Text(
-                    '앱이름',
+                    '찾아드림',
                     style: TextStyle(
                       fontSize: 22,
                       fontWeight: FontWeight.w800,
