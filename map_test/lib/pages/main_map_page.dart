@@ -8,6 +8,7 @@ import 'package:kakao_map_plugin/kakao_map_plugin.dart';
 import '../lost_models/lost_item.dart';
 import '../utils/current_position.dart';
 import '../utils/geohash_query.dart';
+import 'found_item_manage_page.dart';
 import 'found_register_page.dart';
 import 'lost_item_detail_page.dart';
 import 'lost_search_page.dart';
@@ -432,6 +433,77 @@ class _MainMapPageState extends State<MainMapPage> {
         item.longitude! <= northEast.longitude;
   }
 
+  Future<void> _openManageItems() async {
+    String enteredPassword = '';
+
+    final password = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('수정 / 삭제'),
+          content: TextField(
+            autofocus: true,
+            obscureText: true,
+            textInputAction: TextInputAction.done,
+            decoration: const InputDecoration(
+              labelText: '등록 비밀번호',
+              hintText: '등록할 때 입력한 비밀번호',
+              border: OutlineInputBorder(),
+            ),
+            onChanged: (value) {
+              enteredPassword = value;
+            },
+            onSubmitted: (value) {
+              final trimmed = value.trim();
+              if (trimmed.isNotEmpty) {
+                Navigator.pop(dialogContext, trimmed);
+              }
+            },
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('취소'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final trimmed = enteredPassword.trim();
+                if (trimmed.isEmpty) {
+                  return;
+                }
+                Navigator.pop(dialogContext, trimmed);
+              },
+              child: const Text('확인'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (!mounted || password == null || password.isEmpty) {
+      return;
+    }
+
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+
+    if (!mounted) {
+      return;
+    }
+
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => FoundItemManagePage(password: password),
+      ),
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    await _restoreMapAfterNavigation();
+  }
+
   @override
   void dispose() {
     _viewportDebounce?.cancel();
@@ -455,20 +527,51 @@ class _MainMapPageState extends State<MainMapPage> {
                   bottom: BorderSide(color: Color(0xFFE9EEF5), width: 1),
                 ),
               ),
-              child: const Column(
+              child: Stack(
+                alignment: Alignment.center,
                 children: [
-                  Text(
-                    '찾아드림',
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w800,
-                      color: Color(0xFF1F2937),
-                    ),
+                  const Column(
+                    children: [
+                      Text(
+                        '찾아드림',
+                        style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF1F2937),
+                        ),
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        '잃어버린 물건을 찾아드립니다',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF6B7280),
+                        ),
+                      ),
+                    ],
                   ),
-                  SizedBox(height: 4),
-                  Text(
-                    '잃어버린 물건을 찾아드립니다',
-                    style: TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
+                  Positioned(
+                    left: 12,
+                    top: 0,
+                    child: TextButton.icon(
+                      onPressed: _openManageItems,
+                      style: TextButton.styleFrom(
+                        foregroundColor: const Color(0xFF6B7280),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 6,
+                        ),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      icon: const Icon(Icons.edit_outlined, size: 17),
+                      label: const Text(
+                        '수정/삭제',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
                   ),
                 ],
               ),
