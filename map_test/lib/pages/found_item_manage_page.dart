@@ -1,16 +1,14 @@
+import 'dart:convert';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 
 import '../lost_models/lost_item.dart';
 import 'found_item_edit_page.dart';
 
 class FoundItemManagePage extends StatefulWidget {
-  const FoundItemManagePage({
-    super.key,
-    required this.password,
-  });
-
-  final String password;
+  const FoundItemManagePage({super.key});
 
   @override
   State<FoundItemManagePage> createState() => _FoundItemManagePageState();
@@ -36,7 +34,6 @@ class _FoundItemManagePageState extends State<FoundItemManagePage> {
     try {
       final snapshot = await FirebaseFirestore.instance
           .collection('found_items')
-          .where('password', isEqualTo: widget.password)
           .where('polUse', isEqualTo: 'user')
           .get(const GetOptions(source: Source.server));
 
@@ -74,18 +71,143 @@ class _FoundItemManagePageState extends State<FoundItemManagePage> {
   }
 
   Future<void> _openItem(LostItem item) async {
-    final changed = await Navigator.push<bool>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => FoundItemEditPage(
-          item: item,
-          password: widget.password,
-        ),
-      ),
+    String enteredPassword = '';
+
+    final password = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('비밀번호 확인'),
+          content: TextField(
+            autofocus: true,
+            obscureText: true,
+            keyboardType: TextInputType.visiblePassword,
+            textInputAction: TextInputAction.done,
+            decoration: const InputDecoration(
+              labelText: '등록 비밀번호',
+              hintText: '등록할 때 입력한 비밀번호',
+              border: OutlineInputBorder(),
+            ),
+            onChanged: (value) {
+              enteredPassword = value;
+            },
+            onSubmitted: (value) {
+              final trimmed = value.trim();
+              if (trimmed.isNotEmpty) {
+                Navigator.pop(dialogContext, trimmed);
+              }
+            },
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('취소'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final trimmed = enteredPassword.trim();
+                if (trimmed.isNotEmpty) {
+                  Navigator.pop(dialogContext, trimmed);
+                }
+              },
+              child: const Text('확인'),
+            ),
+          ],
+        );
+      },
     );
 
-    if (changed == true && mounted) {
-      await _loadItems();
+    if (!mounted || password == null || password.isEmpty) {
+      return;
+    }
+
+    // 첫 다이얼로그의 route/텍스트필드 종료가 끝난 뒤 다음 작업 수행
+    await Future<void>.delayed(const Duration(milliseconds: 350));
+
+    if (!mounted) {
+      return;
+    }
+
+    try {
+      final document = await FirebaseFirestore.instance
+          .collection('found_items')
+          .doc(item.atcId)
+          .get(const GetOptions(source: Source.server));
+
+      if (!mounted) {
+        return;
+      }
+
+      final storedPassword =
+          document.data()?['password']?.toString().trim() ?? '';
+
+      final hashedPassword = sha256
+          .convert(utf8.encode('${item.atcId}::$password'))
+          .toString();
+
+      final passwordMatches =
+          storedPassword == password || storedPassword == hashedPassword;
+
+      if (!passwordMatches) {
+        await showDialog<void>(
+          context: context,
+          builder: (dialogContext) {
+            return AlertDialog(
+              title: const Text('알림'),
+              content: const Text('비밀번호가 틀렸습니다.'),
+              actions: [
+                FilledButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('확인'),
+                ),
+              ],
+            );
+          },
+        );
+        return;
+      }
+
+      if (!mounted) {
+        return;
+      }
+
+      final changed = await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => FoundItemEditPage(
+            item: item,
+            password: password,
+          ),
+        ),
+      );
+
+      if (changed == true && mounted) {
+        await _loadItems();
+      }
+    } on FirebaseException catch (error) {
+      if (!mounted) {
+        return;
+      }
+
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) {
+          return AlertDialog(
+            title: const Text('알림'),
+            content: Text(
+              error.code == 'permission-denied'
+                  ? '비밀번호를 확인할 권한이 없습니다.'
+                  : '비밀번호 확인 중 문제가 발생했습니다. (${error.code})',
+            ),
+            actions: [
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('확인'),
+              ),
+            ],
+          );
+        },
+      );
     }
   }
 
@@ -126,8 +248,8 @@ class _FoundItemManagePageState extends State<FoundItemManagePage> {
     if (_items.isEmpty) {
       return const _MessageView(
         icon: Icons.inventory_2_outlined,
-        title: '일치하는 등록물이 없습니다',
-        message: '입력한 비밀번호로 등록된 습득물을 찾지 못했습니다.',
+        title: '등록물이 없습니다',
+        message: '앱에서 등록한 습득물이 없습니다.',
       );
     }
 

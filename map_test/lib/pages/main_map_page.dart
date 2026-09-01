@@ -434,66 +434,10 @@ class _MainMapPageState extends State<MainMapPage> {
   }
 
   Future<void> _openManageItems() async {
-    String enteredPassword = '';
-
-    final password = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('수정 / 삭제'),
-          content: TextField(
-            autofocus: true,
-            obscureText: true,
-            textInputAction: TextInputAction.done,
-            decoration: const InputDecoration(
-              labelText: '등록 비밀번호',
-              hintText: '등록할 때 입력한 비밀번호',
-              border: OutlineInputBorder(),
-            ),
-            onChanged: (value) {
-              enteredPassword = value;
-            },
-            onSubmitted: (value) {
-              final trimmed = value.trim();
-              if (trimmed.isNotEmpty) {
-                Navigator.pop(dialogContext, trimmed);
-              }
-            },
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('취소'),
-            ),
-            FilledButton(
-              onPressed: () {
-                final trimmed = enteredPassword.trim();
-                if (trimmed.isEmpty) {
-                  return;
-                }
-                Navigator.pop(dialogContext, trimmed);
-              },
-              child: const Text('확인'),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (!mounted || password == null || password.isEmpty) {
-      return;
-    }
-
-    await Future<void>.delayed(const Duration(milliseconds: 300));
-
-    if (!mounted) {
-      return;
-    }
-
     await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => FoundItemManagePage(password: password),
+        builder: (_) => const FoundItemManagePage(),
       ),
     );
 
