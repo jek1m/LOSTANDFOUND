@@ -601,29 +601,18 @@ class _MainMapPageState extends State<MainMapPage> {
                               Color(0xFF7C3AED),
                             ],
                             onTap: () async {
-                              DetectedSearchRegion? initialRegion;
-                              try {
-                                initialRegion =
-                                    await _detectSearchRegionWithKakaoMap(
-                                  requestPermission: false,
-                                );
-                              } catch (_) {
-                                // 검색 화면에서 기기 위치 기반 자동 설정을 한 번 더 시도한다.
-                              }
-                              if (!mounted) {
-                                return;
-                              }
                               await Navigator.push(
                                 context,
                                 MaterialPageRoute(
                                   builder: (context) => LostSearchPage(
-                                    initialDetectedRegion: initialRegion,
-                                    autoDetectLocation: initialRegion == null,
                                     regionDetector:
                                         _detectSearchRegionWithKakaoMap,
                                   ),
                                 ),
                               );
+                              if (!mounted) {
+                                return;
+                              }
                               await _restoreMapAfterNavigation();
                             },
                           ),
