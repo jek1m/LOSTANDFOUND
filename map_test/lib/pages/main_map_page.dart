@@ -232,7 +232,7 @@ class _MainMapPageState extends State<MainMapPage> {
         for (final snapshot in snapshots)
           for (final document in snapshot.docs) document.id: document,
       };
-<<<<<<< HEAD
+
       final items =
           documents.values
               .map(LostItem.fromDoc)
@@ -243,7 +243,7 @@ class _MainMapPageState extends State<MainMapPage> {
               final bDate = b.fdYmd ?? DateTime.fromMillisecondsSinceEpoch(0);
               return bDate.compareTo(aDate);
             });
-=======
+
       final items = documents.values
           .map(LostItem.fromDoc)
           .where((item) => _isWithinBounds(item, bounds))
@@ -257,8 +257,7 @@ class _MainMapPageState extends State<MainMapPage> {
           }
           return b.atcId.compareTo(a.atcId);
         });
->>>>>>> origin/feature/main-page-test
-
+        
       if (!mounted || requestId != _nearbyRequestId) {
         return;
       }
@@ -670,7 +669,7 @@ class _MainMapPageState extends State<MainMapPage> {
                               Color(0xFF7C3AED),
                             ],
                             onTap: () async {
-<<<<<<< HEAD
+
                               DetectedSearchRegion? initialRegion;
                               try {
                                 initialRegion =
@@ -683,8 +682,7 @@ class _MainMapPageState extends State<MainMapPage> {
                               if (!mounted) {
                                 return;
                               }
-=======
->>>>>>> origin/feature/main-page-test
+
                               await Navigator.push(
                                 context,
                                 MaterialPageRoute(
