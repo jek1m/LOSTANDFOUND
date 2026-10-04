@@ -1,10 +1,8 @@
 import 'dart:async';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:kakao_map_plugin/kakao_map_plugin.dart';
-
 import '../lost_models/lost_item.dart';
 import '../utils/current_position.dart';
 import '../utils/geohash_query.dart';
@@ -12,21 +10,16 @@ import 'found_item_manage_page.dart';
 import 'found_register_page.dart';
 import 'lost_item_detail_page.dart';
 import 'lost_search_page.dart';
-
 class MainMapPage extends StatefulWidget {
   const MainMapPage({super.key});
-
   @override
   State<MainMapPage> createState() => _MainMapPageState();
 }
-
 class _ItemLocationGroup {
   const _ItemLocationGroup({required this.location, required this.items});
-
   final LatLng location;
   final List<LostItem> items;
 }
-
 class _MainMapPageState extends State<MainMapPage> {
   static const int _mapMarkerDisplayLimit = 100;
   static const int _mapSearchDisabledLevel = 9;
@@ -38,7 +31,6 @@ class _MainMapPageState extends State<MainMapPage> {
       'data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20width=%2232%22%20height=%2240%22%20viewBox=%220%200%2032%2040%22%3E%3Cpath%20d=%22M16%201C7.72%201%201%207.72%201%2016c0%2010.8%2015%2023%2015%2023s15-12.2%2015-23C31%207.72%2024.28%201%2016%201z%22%20fill=%22%230F766E%22%20stroke=%22%23FFFFFF%22%20stroke-width=%222%22/%3E%3Ccircle%20cx=%2216%22%20cy=%2216%22%20r=%225%22%20fill=%22%23FFFFFF%22/%3E%3C/svg%3E';
   static const String _appMarkerImage =
       'data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20width=%2232%22%20height=%2240%22%20viewBox=%220%200%2032%2040%22%3E%3Cpath%20d=%22M16%201C7.72%201%201%207.72%201%2016c0%2010.8%2015%2023%2015%2023s15-12.2%2015-23C31%207.72%2024.28%201%2016%201z%22%20fill=%22%23F97316%22%20stroke=%22%23FFFFFF%22%20stroke-width=%222%22/%3E%3Ccircle%20cx=%2216%22%20cy=%2216%22%20r=%225%22%20fill=%22%23FFFFFF%22/%3E%3C/svg%3E';
-
   KakaoMapController? _mapController;
   LatLng? _currentLocation;
   bool _isLoadingLocation = true;
@@ -49,15 +41,12 @@ class _MainMapPageState extends State<MainMapPage> {
   int _nearbyRequestId = 0;
   int _mapInstanceId = 0;
   Timer? _viewportDebounce;
-
   final LatLng _fallbackCenter = LatLng(37.5665, 126.9780);
-
   @override
   void initState() {
     super.initState();
     _loadCurrentLocation();
   }
-
   Future<void> _loadCurrentLocation() async {
     if (mounted) {
       setState(() {
@@ -65,35 +54,28 @@ class _MainMapPageState extends State<MainMapPage> {
         _locationMessage = null;
       });
     }
-
     try {
       if (!await Geolocator.isLocationServiceEnabled()) {
         _setLocationFailure('위치 서비스가 꺼져 있습니다. 기기 위치를 켜주세요.');
         return;
       }
-
       var permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
       }
-
       if (permission == LocationPermission.denied) {
         _setLocationFailure('주변 습득물을 보려면 위치 권한을 허용해 주세요.');
         return;
       }
-
       if (permission == LocationPermission.deniedForever) {
         _setLocationFailure('앱 설정에서 위치 권한을 허용해 주세요.');
         return;
       }
-
       final position = await getReliableCurrentPosition();
       final location = LatLng(position.latitude, position.longitude);
-
       if (!mounted) {
         return;
       }
-
       setState(() {
         _currentLocation = location;
         _isLoadingLocation = false;
@@ -104,7 +86,6 @@ class _MainMapPageState extends State<MainMapPage> {
       _setLocationFailure('현재 위치를 가져오지 못했습니다. 다시 시도해 주세요.');
     }
   }
-
   void _setLocationFailure(String message) {
     if (!mounted) {
       return;
@@ -114,7 +95,6 @@ class _MainMapPageState extends State<MainMapPage> {
       _locationMessage = message;
     });
   }
-
   void _moveToCurrentLocation() {
     final location = _currentLocation;
     if (location == null) {
@@ -123,12 +103,10 @@ class _MainMapPageState extends State<MainMapPage> {
     }
     _mapController?.setCenter(location);
   }
-
   Future<void> _restoreMapAfterNavigation() async {
     if (!mounted) {
       return;
     }
-
     // KakaoMap의 웹뷰 컨트롤러는 다른 페이지를 다녀온 뒤 유효하지 않을 수 있다.
     // 새 지도 인스턴스를 만들고, 위치와 마커 데이터를 다시 적용한다.
     setState(() {
@@ -137,7 +115,6 @@ class _MainMapPageState extends State<MainMapPage> {
     });
     await _loadCurrentLocation();
   }
-
   Future<void> _zoomIn() async {
     final controller = _mapController;
     if (controller == null) {
@@ -148,7 +125,6 @@ class _MainMapPageState extends State<MainMapPage> {
       controller.setLevel(level - 1);
     }
   }
-
   Future<void> _zoomOut() async {
     final controller = _mapController;
     if (controller == null) {
@@ -159,19 +135,16 @@ class _MainMapPageState extends State<MainMapPage> {
       controller.setLevel(level + 1);
     }
   }
-
   void _onCameraIdle() {
     _viewportDebounce?.cancel();
     _viewportDebounce = Timer(const Duration(milliseconds: 400), () async {
       await _refreshVisibleItems();
     });
   }
-
   void _showZoomInMessage() {
     if (!mounted) {
       return;
     }
-
     // 이미 실행 중인 더 넓은 영역의 조회 결과가 뒤늦게 반영되지 않게 한다.
     _nearbyRequestId++;
     _mapController?.clearMarker();
@@ -181,7 +154,6 @@ class _MainMapPageState extends State<MainMapPage> {
       _itemsMessage = '지도를 확대하면 분실물을 확인할 수 있어요.';
     });
   }
-
   Future<void> _refreshVisibleItems() async {
     final controller = _mapController;
     if (controller == null) {
@@ -194,14 +166,12 @@ class _MainMapPageState extends State<MainMapPage> {
     }
     await _loadVisibleItems(await controller.getBounds());
   }
-
   Future<void> _loadVisibleItems(LatLngBounds bounds) async {
     final requestId = ++_nearbyRequestId;
     setState(() {
       _isLoadingItems = true;
       _itemsMessage = null;
     });
-
     try {
       final southWest = bounds.getSouthWest();
       final northEast = bounds.getNorthEast();
@@ -232,18 +202,6 @@ class _MainMapPageState extends State<MainMapPage> {
         for (final snapshot in snapshots)
           for (final document in snapshot.docs) document.id: document,
       };
-
-      final items =
-          documents.values
-              .map(LostItem.fromDoc)
-              .where((item) => _isWithinBounds(item, bounds))
-              .toList(growable: false)
-            ..sort((a, b) {
-              final aDate = a.fdYmd ?? DateTime.fromMillisecondsSinceEpoch(0);
-              final bDate = b.fdYmd ?? DateTime.fromMillisecondsSinceEpoch(0);
-              return bDate.compareTo(aDate);
-            });
-
       final items = documents.values
           .map(LostItem.fromDoc)
           .where((item) => _isWithinBounds(item, bounds))
@@ -257,11 +215,9 @@ class _MainMapPageState extends State<MainMapPage> {
           }
           return b.atcId.compareTo(a.atcId);
         });
-        
       if (!mounted || requestId != _nearbyRequestId) {
         return;
       }
-
       // 플러그인은 빈 마커 목록으로 갱신될 때 이전 마커를 자동 제거하지 않는다.
       _mapController?.clearMarker();
       setState(() {
@@ -280,7 +236,6 @@ class _MainMapPageState extends State<MainMapPage> {
       _setItemsFailure(requestId, '주변 습득물을 불러오지 못했습니다.');
     }
   }
-
   void _setItemsFailure(int requestId, String message) {
     if (!mounted || requestId != _nearbyRequestId) {
       return;
@@ -290,7 +245,6 @@ class _MainMapPageState extends State<MainMapPage> {
       _itemsMessage = message;
     });
   }
-
   Future<DetectedSearchRegion?> _detectSearchRegionWithKakaoMap({
     required bool requestPermission,
   }) async {
@@ -299,7 +253,6 @@ class _MainMapPageState extends State<MainMapPage> {
     if (controller == null || location == null) {
       return null;
     }
-
     final response = await controller
         .coord2RegionCode(
           Coord2RegionCodeRequest(x: location.longitude, y: location.latitude),
@@ -308,7 +261,6 @@ class _MainMapPageState extends State<MainMapPage> {
     if (response.list.isEmpty) {
       return null;
     }
-
     final administrative = response.list.where(
       (result) => result.regionType == 'H',
     );
@@ -319,7 +271,6 @@ class _MainMapPageState extends State<MainMapPage> {
     if (region == null) {
       return null;
     }
-
     final subregion = region == '세종특별자치시'
         ? result.region3DepthName
         : result.region2DepthName;
@@ -328,7 +279,6 @@ class _MainMapPageState extends State<MainMapPage> {
       subregion: (subregion?.trim().isEmpty ?? true) ? null : subregion!.trim(),
     );
   }
-
   String? _normalizeSearchRegion(String? value) {
     final region = value?.trim();
     if (region == null || region.isEmpty) {
@@ -337,13 +287,11 @@ class _MainMapPageState extends State<MainMapPage> {
     const aliases = {'강원특별자치도': '강원도', '전라북도': '전북특별자치도'};
     return aliases[region] ?? region;
   }
-
   Marker? _currentLocationMarker() {
     final location = _currentLocation;
     if (location == null) {
       return null;
     }
-
     return Marker(
       markerId: _currentLocationMarkerId,
       latLng: location,
@@ -353,7 +301,6 @@ class _MainMapPageState extends State<MainMapPage> {
       zIndex: 100,
     );
   }
-
   List<Marker> _markersFromItems(List<LostItem> items) {
     final groups = _itemLocationGroups(items);
     return groups
@@ -373,7 +320,6 @@ class _MainMapPageState extends State<MainMapPage> {
         )
         .toList(growable: false);
   }
-
   List<LostItem> _itemsForVisibleLocationGroups(List<LostItem> items) {
     final visibleGroups = _itemLocationGroups(
       items,
@@ -382,7 +328,6 @@ class _MainMapPageState extends State<MainMapPage> {
         .expand((group) => group.items)
         .toList(growable: false);
   }
-
   List<_ItemLocationGroup> _itemLocationGroups(List<LostItem> items) {
     final groupedItems = <String, List<LostItem>>{};
     for (final item in items) {
@@ -400,7 +345,6 @@ class _MainMapPageState extends State<MainMapPage> {
         )
         .toList(growable: false);
   }
-
   void _openItemLocationGroup(List<LostItem> items, String markerId) {
     const markerPrefix = '__lost_location_';
     if (!markerId.startsWith(markerPrefix)) {
@@ -411,13 +355,11 @@ class _MainMapPageState extends State<MainMapPage> {
     if (index == null || index < 0 || index >= groups.length) {
       return;
     }
-
     final group = groups[index];
     if (group.items.length == 1) {
       _openItemDetail(group.items.first);
       return;
     }
-
     showModalBottomSheet<void>(
       context: context,
       builder: (context) => SafeArea(
@@ -442,13 +384,11 @@ class _MainMapPageState extends State<MainMapPage> {
       ),
     );
   }
-
   void _openItemDetail(LostItem item) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(builder: (_) => LostItemDetailPage(item: item)),
     );
   }
-
   bool _hasValidLocation(LostItem item) {
     final latitude = item.latitude;
     final longitude = item.longitude;
@@ -459,7 +399,6 @@ class _MainMapPageState extends State<MainMapPage> {
         longitude >= -180 &&
         longitude <= 180;
   }
-
   bool _isWithinBounds(LostItem item, LatLngBounds bounds) {
     if (!_hasValidLocation(item)) {
       return false;
@@ -471,7 +410,6 @@ class _MainMapPageState extends State<MainMapPage> {
         item.longitude! >= southWest.longitude &&
         item.longitude! <= northEast.longitude;
   }
-
   Future<void> _openManageItems() async {
     await Navigator.push(
       context,
@@ -479,20 +417,16 @@ class _MainMapPageState extends State<MainMapPage> {
         builder: (_) => const FoundItemManagePage(),
       ),
     );
-
     if (!mounted) {
       return;
     }
-
     await _restoreMapAfterNavigation();
   }
-
   @override
   void dispose() {
     _viewportDebounce?.cancel();
     super.dispose();
   }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -559,7 +493,6 @@ class _MainMapPageState extends State<MainMapPage> {
                 ],
               ),
             ),
-
             // 지도 영역
             Expanded(
               child: Stack(
@@ -585,14 +518,12 @@ class _MainMapPageState extends State<MainMapPage> {
                       onCameraIdle: (_, _) => _onCameraIdle(),
                     ),
                   ),
-
                   Positioned(
                     top: 12,
                     left: 16,
                     right: 16,
                     child: _locationStatusCard(),
                   ),
-
                   Positioned(
                     right: 18,
                     bottom: 92,
@@ -652,7 +583,6 @@ class _MainMapPageState extends State<MainMapPage> {
                       ],
                     ),
                   ),
-
                   // 하단 버튼 영역
                   Positioned(
                     left: 20,
@@ -669,20 +599,6 @@ class _MainMapPageState extends State<MainMapPage> {
                               Color(0xFF7C3AED),
                             ],
                             onTap: () async {
-
-                              DetectedSearchRegion? initialRegion;
-                              try {
-                                initialRegion =
-                                    await _detectSearchRegionWithKakaoMap(
-                                      requestPermission: false,
-                                    );
-                              } catch (_) {
-                                // 검색 화면에서 기기 위치 기반 자동 설정을 한 번 더 시도한다.
-                              }
-                              if (!mounted) {
-                                return;
-                              }
-
                               await Navigator.push(
                                 context,
                                 MaterialPageRoute(
@@ -731,7 +647,6 @@ class _MainMapPageState extends State<MainMapPage> {
       ),
     );
   }
-
   Widget _locationStatusCard() {
     if (_isLoadingLocation) {
       return _mapStatusCard(
@@ -749,7 +664,6 @@ class _MainMapPageState extends State<MainMapPage> {
         ),
       );
     }
-
     final message = _locationMessage;
     if (message != null) {
       return _mapStatusCard(
@@ -766,7 +680,6 @@ class _MainMapPageState extends State<MainMapPage> {
         ),
       );
     }
-
     final itemsMessage = _itemsMessage;
     if (itemsMessage != null) {
       return _mapStatusCard(
@@ -783,7 +696,6 @@ class _MainMapPageState extends State<MainMapPage> {
         ),
       );
     }
-
     return Align(
       alignment: Alignment.centerLeft,
       child: Row(
@@ -825,74 +737,6 @@ class _MainMapPageState extends State<MainMapPage> {
       ),
     );
   }
-
-  /*
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          PopupMenuButton<double>(
-            tooltip: '주변 범위 선택',
-            onSelected: _changeNearbyRadius,
-            itemBuilder: (context) => _nearbyRadiusOptions.map((radius) {
-              final optionKm = (radius / 1000).round();
-              return PopupMenuItem<double>(
-                value: radius,
-                child: Row(
-                  children: [
-                    SizedBox(
-                      width: 28,
-                      child: radius == _nearbyRadiusMeters
-                          ? const Icon(
-                              Icons.check,
-                              size: 18,
-                              color: Color(0xFF2563EB),
-                            )
-                          : null,
-                    ),
-                    Text('반경 $optionKm km'),
-                  ],
-                ),
-              );
-            }).toList(),
-            child: _mapStatusCard(
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.near_me, size: 18, color: Color(0xFF2563EB)),
-                  const SizedBox(width: 7),
-                  Text(
-                    '내 주변 ${radiusKm}km · ${_nearbyItems.length}개',
-                    style: const TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                  const SizedBox(width: 4),
-                  const Icon(Icons.keyboard_arrow_down, size: 20),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          _mapStatusCard(
-            child: InkWell(
-              onTap: _isLoadingItems || _isLoadingLocation
-                  ? null
-                  : _loadCurrentLocation,
-              child: _isLoadingItems
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.refresh, size: 18),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  */
   Widget _mapStatusCard({required Widget child}) {
     return Material(
       color: Colors.white,
@@ -905,14 +749,12 @@ class _MainMapPageState extends State<MainMapPage> {
     );
   }
 }
-
 // 하단 메인 버튼
 class MainBottomButton extends StatelessWidget {
   final String text;
   final IconData icon;
   final List<Color> colors;
   final VoidCallback onTap;
-
   const MainBottomButton({
     super.key,
     required this.text,
@@ -920,7 +762,6 @@ class MainBottomButton extends StatelessWidget {
     required this.colors,
     required this.onTap,
   });
-
   @override
   Widget build(BuildContext context) {
     return SizedBox(
