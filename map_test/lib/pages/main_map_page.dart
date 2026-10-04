@@ -28,8 +28,8 @@ class _ItemLocationGroup {
 }
 
 class _MainMapPageState extends State<MainMapPage> {
-  static const int _mapQueryReadLimit = 100;
-  static const int _mapDisplayLimit = 50;
+  static const int _mapMarkerDisplayLimit = 100;
+  static const int _mapSearchDisabledLevel = 9;
   static const String _currentLocationMarkerId = '__current_location__';
   static const double _mapControlWidth = 48;
   static const String _currentLocationMarkerImage =
@@ -163,17 +163,33 @@ class _MainMapPageState extends State<MainMapPage> {
   void _onCameraIdle() {
     _viewportDebounce?.cancel();
     _viewportDebounce = Timer(const Duration(milliseconds: 400), () async {
-      final controller = _mapController;
-      if (controller == null) {
-        return;
-      }
-      await _loadVisibleItems(await controller.getBounds());
+      await _refreshVisibleItems();
+    });
+  }
+
+  void _showZoomInMessage() {
+    if (!mounted) {
+      return;
+    }
+
+    // 이미 실행 중인 더 넓은 영역의 조회 결과가 뒤늦게 반영되지 않게 한다.
+    _nearbyRequestId++;
+    _mapController?.clearMarker();
+    setState(() {
+      _nearbyItems = const [];
+      _isLoadingItems = false;
+      _itemsMessage = '지도를 확대하면 분실물을 확인할 수 있어요.';
     });
   }
 
   Future<void> _refreshVisibleItems() async {
     final controller = _mapController;
     if (controller == null) {
+      return;
+    }
+    final level = await controller.getLevel();
+    if (level >= _mapSearchDisabledLevel) {
+      _showZoomInMessage();
       return;
     }
     await _loadVisibleItems(await controller.getBounds());
@@ -209,7 +225,6 @@ class _MainMapPageState extends State<MainMapPage> {
               .orderBy('geohash')
               .startAt([range.start])
               .endBefore([range.end])
-              .limit(_mapQueryReadLimit)
               .get(),
         ),
       );
@@ -217,6 +232,7 @@ class _MainMapPageState extends State<MainMapPage> {
         for (final snapshot in snapshots)
           for (final document in snapshot.docs) document.id: document,
       };
+<<<<<<< HEAD
       final items =
           documents.values
               .map(LostItem.fromDoc)
@@ -227,6 +243,21 @@ class _MainMapPageState extends State<MainMapPage> {
               final bDate = b.fdYmd ?? DateTime.fromMillisecondsSinceEpoch(0);
               return bDate.compareTo(aDate);
             });
+=======
+      final items = documents.values
+          .map(LostItem.fromDoc)
+          .where((item) => _isWithinBounds(item, bounds))
+          .toList(growable: false)
+        ..sort((a, b) {
+          final aDate = a.fdYmd ?? DateTime.fromMillisecondsSinceEpoch(0);
+          final bDate = b.fdYmd ?? DateTime.fromMillisecondsSinceEpoch(0);
+          final dateComparison = bDate.compareTo(aDate);
+          if (dateComparison != 0) {
+            return dateComparison;
+          }
+          return b.atcId.compareTo(a.atcId);
+        });
+>>>>>>> origin/feature/main-page-test
 
       if (!mounted || requestId != _nearbyRequestId) {
         return;
@@ -235,7 +266,7 @@ class _MainMapPageState extends State<MainMapPage> {
       // 플러그인은 빈 마커 목록으로 갱신될 때 이전 마커를 자동 제거하지 않는다.
       _mapController?.clearMarker();
       setState(() {
-        _nearbyItems = items.take(_mapDisplayLimit).toList(growable: false);
+        _nearbyItems = _itemsForVisibleLocationGroups(items);
         _isLoadingItems = false;
         _itemsMessage = null;
       });
@@ -341,6 +372,15 @@ class _MainMapPageState extends State<MainMapPage> {
             zIndex: 50,
           ),
         )
+        .toList(growable: false);
+  }
+
+  List<LostItem> _itemsForVisibleLocationGroups(List<LostItem> items) {
+    final visibleGroups = _itemLocationGroups(
+      items,
+    ).take(_mapMarkerDisplayLimit);
+    return visibleGroups
+        .expand((group) => group.items)
         .toList(growable: false);
   }
 
@@ -630,6 +670,7 @@ class _MainMapPageState extends State<MainMapPage> {
                               Color(0xFF7C3AED),
                             ],
                             onTap: () async {
+<<<<<<< HEAD
                               DetectedSearchRegion? initialRegion;
                               try {
                                 initialRegion =
@@ -642,17 +683,20 @@ class _MainMapPageState extends State<MainMapPage> {
                               if (!mounted) {
                                 return;
                               }
+=======
+>>>>>>> origin/feature/main-page-test
                               await Navigator.push(
                                 context,
                                 MaterialPageRoute(
                                   builder: (context) => LostSearchPage(
-                                    initialDetectedRegion: initialRegion,
-                                    autoDetectLocation: initialRegion == null,
                                     regionDetector:
                                         _detectSearchRegionWithKakaoMap,
                                   ),
                                 ),
                               );
+                              if (!mounted) {
+                                return;
+                              }
                               await _restoreMapAfterNavigation();
                             },
                           ),
