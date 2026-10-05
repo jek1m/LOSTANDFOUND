@@ -94,13 +94,26 @@ class LostItemDetailPage extends StatelessWidget {
   ].whereType<String>().where((value) => value.isNotEmpty).join('/');
 
   String get _location {
-    final parts = [
-      item.sido,
-      item.sigungu,
-      item.eupmyeondong,
-      item.fndPlace,
-    ].whereType<String>().where((value) => value.isNotEmpty).toList();
-    return parts.isEmpty ? '정보 없음' : parts.join(' ');
+    String clean(String? value) =>
+        (value ?? '').trim().replaceAll(RegExp(r'\s+'), ' ');
+    final region = [item.sido, item.sigungu, item.eupmyeondong]
+        .map(clean).where((part) => part.isNotEmpty).join(' ');
+    final place = clean(item.fndPlace);
+    if (region.isEmpty) return place.isEmpty ? '정보 없음' : place;
+    if (place.isEmpty || region == place || region.startsWith('$place ')) {
+      return region;
+    }
+    if (place.startsWith('$region ')) return place;
+    // Remove the region prefix shared by a longer address or storage place.
+    final regionParts = region.split(' ');
+    final placeParts = place.split(' ');
+    var shared = 0;
+    while (shared < regionParts.length && shared < placeParts.length &&
+        regionParts[shared] == placeParts[shared]) {
+      shared++;
+    }
+    return [region, placeParts.skip(shared).join(' ')]
+        .where((part) => part.isNotEmpty).join(' ');
   }
 
   String _formatDate(DateTime? date) {

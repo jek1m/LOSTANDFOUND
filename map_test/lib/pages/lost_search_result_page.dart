@@ -496,29 +496,27 @@ class _LostSearchResultPageState extends State<LostSearchResultPage> {
     });
 
     try {
-      Query<Map<String, dynamic>> query = _buildQuery().limit(_pageSize);
-      final lastDocument = _lastDocument;
-      if (lastDocument != null) {
-        query = query.startAfterDocument(lastDocument);
-      }
-
-      final QuerySnapshot<Map<String, dynamic>> snapshot = await query.get(
-        const GetOptions(source: Source.server),
-      );
-      final List<LostItem> newItems = snapshot.docs
-          .map(LostItem.fromDoc)
-          .where(_matchesFilter)
-          .toList();
-
-      if (!mounted) {
-        return;
-      }
+      var cursor = _lastDocument;
+      var hasMore = _hasMore;
+      final newItems = <LostItem>[];
+      // Keep searching past raw pages containing no matching items.
+      do {
+        Query<Map<String, dynamic>> query = _buildQuery().limit(_pageSize);
+        if (cursor != null) query = query.startAfterDocument(cursor);
+        final snapshot = await query.get(const GetOptions(source: Source.server));
+        if (!mounted) return;
+        newItems.addAll(snapshot.docs.map(LostItem.fromDoc).where(_matchesFilter));
+        if (snapshot.docs.isNotEmpty) cursor = snapshot.docs.last;
+        hasMore = snapshot.docs.length == _pageSize;
+        // Retain progress if a later request fails so retry does not rescan pages.
+        _lastDocument = cursor;
+        _hasMore = hasMore;
+      } while (newItems.isEmpty && hasMore);
+      if (!mounted) return;
       setState(() {
         _items.addAll(newItems);
-        if (snapshot.docs.isNotEmpty) {
-          _lastDocument = snapshot.docs.last;
-        }
-        _hasMore = snapshot.docs.length == _pageSize;
+        _lastDocument = cursor;
+        _hasMore = hasMore;
         _isInitialLoading = false;
         _isLoadingMore = false;
       });
@@ -569,12 +567,8 @@ class _LostSearchResultPageState extends State<LostSearchResultPage> {
       query = query.where('sido', isEqualTo: filter.region);
     }
 
-    if (filter.subregion != null) {
-      final subregionField = filter.region == '세종특별자치시'
-          ? 'eupmyeondong'
-          : 'sigungu';
-      query = query.where(subregionField, isEqualTo: filter.subregion);
-    }
+    // District values can be a bare name, a full region label, or absent
+    // in older documents. Apply the district predicate after fetching.
 
     if (filter.dateRange != null) {
       query = query
@@ -745,10 +739,22 @@ class _LostSearchResultPageState extends State<LostSearchResultPage> {
   }
 
   bool _matchesSubregion(LostItem item, String subregion) {
-    final itemRegion = _normalizeSearchText(
-      '${item.sigungu ?? ''} ${item.eupmyeondong ?? ''}',
-    );
-    return itemRegion.contains(_normalizeSearchText(subregion));
+    final wanted = subregion.trim().replaceAll(RegExp(r'\s+'), ' ');
+    if (wanted.isEmpty) return true;
+    bool matches(String? value) {
+      final text = (value ?? '').trim().replaceAll(RegExp(r'\s+'), ' ');
+      if (text.isEmpty) return false;
+      if (text == wanted) return true;
+      // Match region tokens, preserving the distinction between 중구 and 중랑구.
+      return ' $text '.contains(' $wanted ');
+    }
+    final district = item.sigungu?.trim() ?? '';
+    if (widget.filter.region == '세종특별자치시') {
+      return matches(item.eupmyeondong) ||
+          (item.eupmyeondong?.trim().isEmpty ?? true) && matches(item.fndPlace);
+    }
+    if (district.isNotEmpty) return matches(district);
+    return matches(item.fndPlace);
   }
 
   String _normalizeSearchText(String text) {

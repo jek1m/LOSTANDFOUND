@@ -607,7 +607,64 @@ class _MainMapPageState extends State<MainMapPage> {
                     top: 12,
                     left: 16,
                     right: 16,
-                    child: _locationStatusCard(),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(child: _locationStatusCard()),
+                            const SizedBox(width: 8),
+                            MainBottomButton(
+                              text: '수정/삭제',
+                              icon: Icons.edit_outlined,
+                              colors: const [Color(0xFF2563EB), Color(0xFF1D4ED8)],
+                              onTap: _openManageItems,
+                              compact: true,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        Center(
+                          child: ElevatedButton.icon(
+                            onPressed: _mapController == null ||
+                                    _isLoadingLocation || _isLoadingItems
+                                ? null
+                                : _refreshVisibleItems,
+                            icon: _isLoadingItems
+                                ? const SizedBox.square(
+                                    dimension: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Color(0xFF2563EB),
+                                    ),
+                                  )
+                                : const Icon(Icons.refresh_rounded, size: 21),
+                            label: Text(
+                              _isLoadingItems ? '조회 중…' : '현 지도에서 재검색',
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.white,
+                              foregroundColor: const Color(0xFF2563EB),
+                              disabledBackgroundColor: Colors.white,
+                              disabledForegroundColor: const Color(0xFF8B959E),
+                              surfaceTintColor: Colors.transparent,
+                              elevation: 4,
+                              shadowColor: const Color(0x33000000),
+                              minimumSize: const Size(0, 44),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 20, vertical: 11,
+                              ),
+                              shape: const StadiumBorder(),
+                              side: const BorderSide(color: Color(0xFFE5E7EB)),
+                              textStyle: const TextStyle(
+                                fontSize: 14, fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                   Positioned(
                     right: 18,
@@ -781,42 +838,22 @@ class _MainMapPageState extends State<MainMapPage> {
     }
     return Align(
       alignment: Alignment.centerLeft,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _mapStatusCard(
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(
-                  Icons.map_outlined,
-                  size: 18,
-                  color: Color(0xFF2563EB),
-                ),
-                const SizedBox(width: 7),
-                Text(
-                  '현재 지도 영역 · ${_nearbyItems.length}개',
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
-              ],
+      child: _mapStatusCard(
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.map_outlined, size: 18, color: Color(0xFF2563EB)),
+            const SizedBox(width: 7),
+            Flexible(
+              child: Text(
+                _isLoadingItems
+                    ? '선택한 지도 영역을 조회하고 있습니다.'
+                    : '검색 결과 · $resultCountLabel',
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
             ),
-          ),
-          const SizedBox(width: 8),
-          _mapStatusCard(
-            child: InkWell(
-              onTap: _isLoadingItems || _isLoadingLocation
-                  ? null
-                  : _refreshVisibleItems,
-              child: _isLoadingItems
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.refresh, size: 18),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
