@@ -374,14 +374,26 @@ class _ManageItemCard extends StatelessWidget {
   }
 
   String get _locationText {
-    final parts = <String>[
-      if (item.sido != null) item.sido!,
-      if (item.sigungu != null) item.sigungu!,
-      if (item.eupmyeondong != null) item.eupmyeondong!,
-      if (item.fndPlace != null) item.fndPlace!,
-    ];
-
-    return parts.isEmpty ? '지역 정보 없음' : parts.join(' ');
+    String clean(String? value) =>
+        (value ?? '').trim().replaceAll(RegExp(r'\s+'), ' ');
+    final region = [item.sido, item.sigungu, item.eupmyeondong]
+        .map(clean).where((part) => part.isNotEmpty).join(' ');
+    final place = clean(item.fndPlace);
+    if (region.isEmpty) return place.isEmpty ? '지역 정보 없음' : place;
+    if (place.isEmpty || region == place || region.startsWith('$place ')) {
+      return region;
+    }
+    if (place.startsWith('$region ')) return place;
+    // Remove the region prefix shared by a longer address or storage place.
+    final regionParts = region.split(' ');
+    final placeParts = place.split(' ');
+    var shared = 0;
+    while (shared < regionParts.length && shared < placeParts.length &&
+        regionParts[shared] == placeParts[shared]) {
+      shared++;
+    }
+    return [region, placeParts.skip(shared).join(' ')]
+        .where((part) => part.isNotEmpty).join(' ');
   }
 
   String _formatDate(DateTime? date) {

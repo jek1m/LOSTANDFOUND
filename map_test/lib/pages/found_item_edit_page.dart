@@ -1,7 +1,5 @@
 import 'dart:async';
 
-
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'package:flutter/foundation.dart';
@@ -13,16 +11,13 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 
 import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
 
 import 'package:image_picker/image_picker.dart';
 
 import 'package:kakao_map_plugin/kakao_map_plugin.dart';
 
-
-
 import '../lost_models/lost_item.dart';
-
-
 
 class FoundItemEditPage extends StatefulWidget {
 
@@ -36,13 +31,9 @@ class FoundItemEditPage extends StatefulWidget {
 
   });
 
-
-
   final LostItem item;
 
   final String password;
-
-
 
   @override
 
@@ -50,23 +41,17 @@ class FoundItemEditPage extends StatefulWidget {
 
 }
 
-
-
 class _FoundItemEditPageState extends State<FoundItemEditPage> {
 
   final _formKey = GlobalKey<FormState>();
 
   final _imagePicker = ImagePicker();
 
-
-
   late final TextEditingController _itemNameController;
 
   late final TextEditingController _contactController;
 
   late final TextEditingController _descriptionController;
-
-
 
   static const _categories = <String>[
 
@@ -109,8 +94,6 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
     '기타물품',
 
   ];
-
-
 
   // 지역 선택 목록
   static const _regions = <String>[
@@ -208,13 +191,9 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
     '제주': ['서귀포시', '제주시'],
   };
 
-
-
   late String _selectedCategory;
 
   late DateTime _foundDate;
-
-
 
   late bool _useMapLocation;
 
@@ -234,23 +213,17 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
 
   bool _locationChanged = false;
 
-
-
   XFile? _newImage;
 
   bool _isSaving = false;
 
   bool _isDeleting = false;
 
-
-
   @override
 
   void initState() {
 
     super.initState();
-
-
 
     _itemNameController = TextEditingController(text: widget.item.fdPrdtNm);
 
@@ -262,15 +235,11 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
 
     );
 
-
-
     final category = widget.item.prdtClNmMg;
 
     _selectedCategory = _categories.contains(category) ? category! : '기타물품';
 
     _foundDate = widget.item.fdYmd ?? DateTime.now();
-
-
 
     final hasCoordinates =
 
@@ -292,8 +261,6 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
 
     _mapLocationLabel = _existingLocationLabel();
 
-
-
     _selectedRegion = _shortSido(_selectedSido);
 
     if (!_regions.contains(_selectedRegion)) {
@@ -311,8 +278,6 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
 
   }
 
-
-
   @override
 
   void dispose() {
@@ -326,8 +291,6 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
     super.dispose();
 
   }
-
-
 
   Future<void> _pickDate() async {
 
@@ -343,8 +306,6 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
 
     );
 
-
-
     if (picked != null && mounted) {
 
       setState(() => _foundDate = picked);
@@ -352,8 +313,6 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
     }
 
   }
-
-
 
   Future<void> _pickImage() async {
 
@@ -367,8 +326,6 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
 
     );
 
-
-
     if (image != null && mounted) {
 
       setState(() => _newImage = image);
@@ -376,8 +333,6 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
     }
 
   }
-
-
 
   Future<void> _pickLocation() async {
 
@@ -396,8 +351,6 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
       ),
 
     );
-
-
 
     if (selected != null && mounted) {
 
@@ -423,8 +376,6 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
 
   }
 
-
-
   String _existingLocationLabel() {
 
     final place = widget.item.fndPlace?.trim() ?? '';
@@ -434,8 +385,6 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
       return place;
 
     }
-
-
 
     final regionLabel = _regionLabel(
 
@@ -453,13 +402,9 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
 
     }
 
-
-
     return '지도에서 선택한 위치';
 
   }
-
-
 
   bool _looksLikeCoordinates(String value) {
 
@@ -470,8 +415,6 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
     ).hasMatch(value);
 
   }
-
-
 
   String _regionLabel(String sido, String sigungu, String eupmyeondong) {
 
@@ -486,8 +429,6 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
     ].where((value) => value.trim().isNotEmpty).join(' ');
 
   }
-
-
 
   String _normalizeSido(String value) {
     const sidoMap = {
@@ -511,8 +452,6 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
     };
     return sidoMap[value] ?? value;
   }
-
-
 
   String _shortSido(String value) {
     const shortMap = {
@@ -539,8 +478,6 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
     return shortMap[value] ?? value;
   }
 
-
-
   List<String> get _districtItems {
     final districts = _districtsByRegion[_selectedRegion] ?? const <String>[];
 
@@ -552,8 +489,6 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
     return districts;
   }
 
-
-
   void _changeLocationMode(bool useMap) {
 
     if (_useMapLocation == useMap) {
@@ -561,8 +496,6 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
       return;
 
     }
-
-
 
     setState(() {
 
@@ -574,15 +507,11 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
 
   }
 
-
-
   Future<void> _save() async {
 
     if (_isSaving || _isDeleting) return;
 
     if (!_formKey.currentState!.validate()) return;
-
-
 
     if (!widget.item.isAppRegistered || !widget.item.atcId.startsWith('S')) {
 
@@ -592,17 +521,11 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
 
     }
 
-
-
     setState(() => _isSaving = true);
-
-
 
     Reference? newImageRef;
 
     String? newImageUrl;
-
-
 
     try {
 
@@ -616,8 +539,6 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
 
         final extension = _imageExtension(_newImage!.name);
 
-
-
         newImageRef = FirebaseStorage.instance
 
             .ref()
@@ -627,8 +548,6 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
             .child(widget.item.atcId)
 
             .child('main.$extension');
-
-
 
         final upload = await newImageRef
 
@@ -654,8 +573,6 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
 
             .timeout(const Duration(seconds: 30));
 
-
-
         newImageUrl = await upload.ref
 
             .getDownloadURL()
@@ -663,8 +580,6 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
             .timeout(const Duration(seconds: 15));
 
       }
-
-
 
       final updateData = <String, dynamic>{
 
@@ -682,15 +597,11 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
 
       };
 
-
-
       if (newImageUrl != null) {
 
         updateData['fdFilePathImg'] = newImageUrl;
 
       }
-
-
 
       // 위치는 텍스트 입력으로 받지 않는다. 최초 등록과 동일하게
 
@@ -713,11 +624,11 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
             throw StateError('지도에서 습득 위치를 선택해 주세요.');
           }
 
-
-
           updateData.addAll({
 
-            'fndPlace': label,
+            'fndPlace': _selectedSido.isNotEmpty && _selectedSigungu.isNotEmpty
+                ? '$_selectedSido $_selectedSigungu'
+                : label,
 
             'latitude': latLng.latitude,
 
@@ -753,8 +664,6 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
 
           }
 
-
-
           updateData.addAll({
 
             'fndPlace': '$sido $district',
@@ -777,21 +686,15 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
 
       }
 
-
-
       final docRef = FirebaseFirestore.instance
 
           .collection('found_items')
 
           .doc(widget.item.atcId);
 
-
-
       final snapshot = await docRef.get(const GetOptions(source: Source.server));
 
       final data = snapshot.data();
-
-
 
       if (!snapshot.exists || data == null) {
 
@@ -799,19 +702,13 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
 
       }
 
-
-
       if (data['polUse'] != 'user' || data['password'] != widget.password) {
 
         throw StateError('수정 권한을 확인하지 못했습니다.');
 
       }
 
-
-
       await docRef.update(updateData).timeout(const Duration(seconds: 20));
-
-
 
       final oldImageUrl = widget.item.fdFilePathImg;
 
@@ -834,8 +731,6 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
         }
 
       }
-
-
 
       if (!mounted) return;
 
@@ -883,13 +778,9 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
 
   }
 
-
-
   Future<void> _delete() async {
 
     if (_isSaving || _isDeleting) return;
-
-
 
     final confirmed = await showDialog<bool>(
 
@@ -927,15 +818,9 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
 
     );
 
-
-
     if (confirmed != true || !mounted) return;
 
-
-
     setState(() => _isDeleting = true);
-
-
 
     try {
 
@@ -945,13 +830,9 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
 
           .doc(widget.item.atcId);
 
-
-
       final snapshot = await docRef.get(const GetOptions(source: Source.server));
 
       final data = snapshot.data();
-
-
 
       if (!snapshot.exists || data == null) {
 
@@ -959,15 +840,11 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
 
       }
 
-
-
       if (data['polUse'] != 'user' || data['password'] != widget.password) {
 
         throw StateError('삭제 권한을 확인하지 못했습니다.');
 
       }
-
-
 
       final imageUrl = data['fdFilePathImg'];
 
@@ -991,11 +868,7 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
 
       }
 
-
-
       await docRef.delete().timeout(const Duration(seconds: 20));
-
-
 
       if (!mounted) return;
 
@@ -1023,8 +896,6 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
 
   }
 
-
-
   void _showMessage(String message) {
 
     if (!mounted) return;
@@ -1037,8 +908,6 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
 
   }
 
-
-
   String _formatDate(DateTime date) {
 
     final month = date.month.toString().padLeft(2, '0');
@@ -1049,15 +918,11 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
 
   }
 
-
-
   @override
 
   Widget build(BuildContext context) {
 
     final busy = _isSaving || _isDeleting;
-
-
 
     return Scaffold(
 
@@ -1384,8 +1249,6 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
 
   }
 
-
-
   Widget _imageSection() {
 
     return Column(
@@ -1484,8 +1347,6 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
 
   }
 
-
-
   Future<Widget> _xFilePreview(XFile file) async {
 
     final bytes = await file.readAsBytes();
@@ -1493,8 +1354,6 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
     return Image.memory(bytes, fit: BoxFit.cover);
 
   }
-
-
 
   Widget _label(String text) {
 
@@ -1521,8 +1380,6 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
     );
 
   }
-
-
 
   InputDecoration _inputDecoration(String hint) {
 
@@ -1558,8 +1415,6 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
 
   }
 
-
-
   String _imageExtension(String fileName) {
 
     final lowerName = fileName.toLowerCase().trim();
@@ -1571,8 +1426,6 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
     return allowed.contains(extension) ? extension : 'jpg';
 
   }
-
-
 
   String _contentType(String extension) {
 
@@ -1606,8 +1459,6 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
 
   }
 
-
-
   String _encodeGeohash(
 
     double latitude,
@@ -1622,23 +1473,17 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
 
     const bits = [16, 8, 4, 2, 1];
 
-
-
     final latitudeInterval = [-90.0, 90.0];
 
     final longitudeInterval = [-180.0, 180.0];
 
     final result = StringBuffer();
 
-
-
     var bitIndex = 0;
 
     var characterValue = 0;
 
     var useLongitude = true;
-
-
 
     while (result.length < precision) {
 
@@ -1676,11 +1521,7 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
 
       }
 
-
-
       useLongitude = !useLongitude;
-
-
 
       if (bitIndex < 4) {
 
@@ -1698,15 +1539,11 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
 
     }
 
-
-
     return result.toString();
 
   }
 
 }
-
-
 
 class _EditLocation {
 
@@ -1724,8 +1561,6 @@ class _EditLocation {
 
   });
 
-
-
   final LatLng latLng;
 
   final String label;
@@ -1738,17 +1573,11 @@ class _EditLocation {
 
 }
 
-
-
 class _FoundItemLocationEditPage extends StatefulWidget {
 
   const _FoundItemLocationEditPage({required this.initialLocation});
 
-
-
   final LatLng? initialLocation;
-
-
 
   @override
 
@@ -1757,8 +1586,6 @@ class _FoundItemLocationEditPage extends StatefulWidget {
       _FoundItemLocationEditPageState();
 
 }
-
-
 
 class _FoundItemLocationEditPageState extends State<_FoundItemLocationEditPage> {
 
@@ -1778,10 +1605,7 @@ class _FoundItemLocationEditPageState extends State<_FoundItemLocationEditPage> 
 
   String? _selectedDisplayLabel;
 
-
   Timer? _previewDebounce;
-
-
 
   @override
 
@@ -1795,8 +1619,6 @@ class _FoundItemLocationEditPageState extends State<_FoundItemLocationEditPage> 
 
   }
 
-
-
   @override
 
   void dispose() {
@@ -1806,8 +1628,6 @@ class _FoundItemLocationEditPageState extends State<_FoundItemLocationEditPage> 
     super.dispose();
 
   }
-
-
 
   Future<void> _loadCurrentLocation() async {
 
@@ -1822,8 +1642,6 @@ class _FoundItemLocationEditPageState extends State<_FoundItemLocationEditPage> 
       });
 
     }
-
-
 
     try {
 
@@ -1847,8 +1665,6 @@ class _FoundItemLocationEditPageState extends State<_FoundItemLocationEditPage> 
 
       }
 
-
-
       var permission = await Geolocator.checkPermission();
 
       if (permission == LocationPermission.denied) {
@@ -1856,8 +1672,6 @@ class _FoundItemLocationEditPageState extends State<_FoundItemLocationEditPage> 
         permission = await Geolocator.requestPermission();
 
       }
-
-
 
       if (permission == LocationPermission.denied) {
 
@@ -1875,8 +1689,6 @@ class _FoundItemLocationEditPageState extends State<_FoundItemLocationEditPage> 
 
       }
 
-
-
       if (permission == LocationPermission.deniedForever) {
 
         if (!mounted) return;
@@ -1893,8 +1705,6 @@ class _FoundItemLocationEditPageState extends State<_FoundItemLocationEditPage> 
 
       }
 
-
-
       final position = await Geolocator.getCurrentPosition(
 
         locationSettings: const LocationSettings(
@@ -1907,11 +1717,7 @@ class _FoundItemLocationEditPageState extends State<_FoundItemLocationEditPage> 
 
       final latLng = LatLng(position.latitude, position.longitude);
 
-
-
       if (!mounted) return;
-
-
 
       setState(() {
 
@@ -1923,8 +1729,6 @@ class _FoundItemLocationEditPageState extends State<_FoundItemLocationEditPage> 
 
       });
 
-
-
       if (widget.initialLocation == null) {
 
         _mapController?.setCenter(latLng);
@@ -1932,8 +1736,6 @@ class _FoundItemLocationEditPageState extends State<_FoundItemLocationEditPage> 
         _mapController?.setLevel(3);
 
       }
-
-
 
       final center = _selectedCenter;
 
@@ -1959,8 +1761,6 @@ class _FoundItemLocationEditPageState extends State<_FoundItemLocationEditPage> 
 
   }
 
-
-
   Future<void> _moveToCurrentLocation() async {
 
     if (_currentLocation == null) {
@@ -1971,8 +1771,6 @@ class _FoundItemLocationEditPageState extends State<_FoundItemLocationEditPage> 
 
     }
 
-
-
     _mapController?.setCenter(_currentLocation!);
 
     setState(() => _selectedCenter = _currentLocation!);
@@ -1980,8 +1778,6 @@ class _FoundItemLocationEditPageState extends State<_FoundItemLocationEditPage> 
     await _updateSelectionPreview(_currentLocation!);
 
   }
-
-
 
   void _onCameraIdle(LatLng latLng) {
 
@@ -1995,8 +1791,6 @@ class _FoundItemLocationEditPageState extends State<_FoundItemLocationEditPage> 
 
     });
 
-
-
     _previewDebounce?.cancel();
 
     _previewDebounce = Timer(const Duration(milliseconds: 350), () {
@@ -2007,17 +1801,11 @@ class _FoundItemLocationEditPageState extends State<_FoundItemLocationEditPage> 
 
   }
 
-
-
   Future<void> _updateSelectionPreview(LatLng latLng) async {
 
     if (!mounted) return;
 
-
-
     setState(() => _isPreviewResolving = true);
-
-
 
     final addressFuture = _resolveAddress(latLng);
 
@@ -2025,16 +1813,14 @@ class _FoundItemLocationEditPageState extends State<_FoundItemLocationEditPage> 
 
     final address = await addressFuture;
 
-    final region = await regionFuture;
-
-
+    var region = await regionFuture;
+    if (region.sido.isEmpty || region.sigungu.isEmpty) {
+      region = _regionFromAddressLabel(address ?? '');
+    }
 
     if (!mounted || _selectedCenter != latLng) return;
 
-
-
     setState(() {
-
 
       _selectedDisplayLabel = _bestLocationLabel(address, region);
 
@@ -2044,17 +1830,11 @@ class _FoundItemLocationEditPageState extends State<_FoundItemLocationEditPage> 
 
   }
 
-
-
   Future<void> _confirmLocation() async {
 
     if (_isResolvingAddress) return;
 
-
-
     setState(() => _isResolvingAddress = true);
-
-
 
     try {
 
@@ -2067,8 +1847,6 @@ class _FoundItemLocationEditPageState extends State<_FoundItemLocationEditPage> 
         return;
 
       }
-
-
 
       final center = controller == null
 
@@ -2088,25 +1866,22 @@ class _FoundItemLocationEditPageState extends State<_FoundItemLocationEditPage> 
 
                 .catchError((_) => selectedCenter!);
 
-
-
       final addressFuture = _resolveAddress(center);
 
       final regionFuture = _resolveRegion(center);
 
       final address = await addressFuture;
 
-      final region = await regionFuture;
+      var region = await regionFuture;
+    if (region.sido.isEmpty || region.sigungu.isEmpty) {
+      region = _regionFromAddressLabel(address ?? '');
+    }
 
       final label = _bestLocationLabel(address, region);
 
-
-
       if (!mounted) return;
 
-
-
-      if (label == null || label.isEmpty) {
+      if (label == null || label.isEmpty || region.sido.isEmpty || region.sigungu.isEmpty) {
 
         ScaffoldMessenger.of(context).showSnackBar(
 
@@ -2121,8 +1896,6 @@ class _FoundItemLocationEditPageState extends State<_FoundItemLocationEditPage> 
         return;
 
       }
-
-
 
       Navigator.pop(
 
@@ -2156,76 +1929,349 @@ class _FoundItemLocationEditPageState extends State<_FoundItemLocationEditPage> 
 
   }
 
-
-
-  Future<_EditRegionSelection> _resolveRegion(LatLng latLng) async {
-
-    final controller = _mapController;
-
-    if (controller == null) {
-
+  _EditRegionSelection _regionFromAddressLabel(String label) {
+    final normalized = label.trim().replaceAll(RegExp(r'\s+'), ' ');
+    if (normalized.isEmpty || normalized.contains(',')) {
       return _EditRegionSelection.empty;
-
     }
 
-
-
-    try {
-
-      final response = await controller
-
-          .coord2RegionCode(
-
-            Coord2RegionCodeRequest(x: latLng.longitude, y: latLng.latitude),
-
-          )
-
-          .timeout(const Duration(seconds: 3));
-
-
-
-      Coord2RegionCode? selectedRegion;
-
-      for (final region in response.list) {
-
-        if (region.regionType == 'H') {
-
-          selectedRegion = region;
-
-          break;
-
-        }
-
-      }
-
-
-
-      if (selectedRegion == null && response.list.isNotEmpty) {
-
-        selectedRegion = response.list.first;
-
-      }
-
-
-
-      return _EditRegionSelection(
-
-        sido: selectedRegion?.region1DepthName?.trim() ?? '',
-
-        sigungu: selectedRegion?.region2DepthName?.trim() ?? '',
-
-        eupmyeondong: selectedRegion?.region3DepthName?.trim() ?? '',
-
-      );
-
-    } catch (_) {
-
+    final parts = normalized.split(' ');
+    if (parts.length < 2) {
       return _EditRegionSelection.empty;
-
     }
 
+    const sidoMap = {
+      '서울': '서울특별시',
+      '서울특별시': '서울특별시',
+      '부산': '부산광역시',
+      '부산광역시': '부산광역시',
+      '대구': '대구광역시',
+      '대구광역시': '대구광역시',
+      '인천': '인천광역시',
+      '인천광역시': '인천광역시',
+      '광주': '광주광역시',
+      '광주광역시': '광주광역시',
+      '대전': '대전광역시',
+      '대전광역시': '대전광역시',
+      '울산': '울산광역시',
+      '울산광역시': '울산광역시',
+      '세종': '세종특별자치시',
+      '세종특별자치시': '세종특별자치시',
+      '경기': '경기도',
+      '경기도': '경기도',
+      '강원': '강원특별자치도',
+      '강원도': '강원특별자치도',
+      '강원특별자치도': '강원특별자치도',
+      '충북': '충청북도',
+      '충청북도': '충청북도',
+      '충남': '충청남도',
+      '충청남도': '충청남도',
+      '전북': '전북특별자치도',
+      '전라북도': '전북특별자치도',
+      '전북특별자치도': '전북특별자치도',
+      '전남': '전라남도',
+      '전라남도': '전라남도',
+      '경북': '경상북도',
+      '경상북도': '경상북도',
+      '경남': '경상남도',
+      '경상남도': '경상남도',
+      '제주': '제주특별자치도',
+      '제주도': '제주특별자치도',
+      '제주특별자치도': '제주특별자치도',
+    };
+
+    final sido = sidoMap[parts.first];
+    if (sido == null) {
+      return _EditRegionSelection.empty;
+    }
+
+    final sigungu = parts[1];
+    final eupmyeondong = parts.length >= 3 ? parts[2] : '';
+
+    return _EditRegionSelection(
+      sido: sido,
+      sigungu: sigungu,
+      eupmyeondong: eupmyeondong,
+    );
   }
 
+  String _canonicalSido(String value) {
+    const sidoMap = {
+      '서울': '서울특별시',
+      '서울특별시': '서울특별시',
+      '부산': '부산광역시',
+      '부산광역시': '부산광역시',
+      '대구': '대구광역시',
+      '대구광역시': '대구광역시',
+      '인천': '인천광역시',
+      '인천광역시': '인천광역시',
+      '광주': '광주광역시',
+      '광주광역시': '광주광역시',
+      '대전': '대전광역시',
+      '대전광역시': '대전광역시',
+      '울산': '울산광역시',
+      '울산광역시': '울산광역시',
+      '세종': '세종특별자치시',
+      '세종특별자치시': '세종특별자치시',
+      '경기': '경기도',
+      '경기도': '경기도',
+      '강원': '강원특별자치도',
+      '강원도': '강원특별자치도',
+      '강원특별자치도': '강원특별자치도',
+      '충북': '충청북도',
+      '충청북도': '충청북도',
+      '충남': '충청남도',
+      '충청남도': '충청남도',
+      '전북': '전북특별자치도',
+      '전라북도': '전북특별자치도',
+      '전북특별자치도': '전북특별자치도',
+      '전남': '전라남도',
+      '전라남도': '전라남도',
+      '경북': '경상북도',
+      '경상북도': '경상북도',
+      '경남': '경상남도',
+      '경상남도': '경상남도',
+      '제주': '제주특별자치도',
+      '제주도': '제주특별자치도',
+      '제주특별자치도': '제주특별자치도',
+    };
+
+    return sidoMap[value.trim()] ?? value.trim();
+  }
+
+  Future<_EditRegionSelection> _resolveRegion(LatLng latLng) async {
+    // 1차: Kakao Map SDK 자체 좌표 -> 행정구역 변환
+    final controller = _mapController;
+    if (controller != null) {
+      try {
+        final response = await controller
+            .coord2RegionCode(
+              Coord2RegionCodeRequest(
+                x: latLng.longitude,
+                y: latLng.latitude,
+              ),
+            )
+            .timeout(const Duration(seconds: 3));
+
+        Coord2RegionCode? selectedRegion;
+
+        for (final region in response.list) {
+          if (region.regionType == 'H') {
+            selectedRegion = region;
+            break;
+          }
+        }
+
+        if (selectedRegion == null && response.list.isNotEmpty) {
+          selectedRegion = response.list.first;
+        }
+
+        if (selectedRegion != null) {
+          final result = _normalizeResolvedRegion(
+            sidoRaw: selectedRegion.region1DepthName?.trim() ?? '',
+            sigunguRaw: selectedRegion.region2DepthName?.trim() ?? '',
+            eupmyeondongRaw: selectedRegion.region3DepthName?.trim() ?? '',
+          );
+
+          if (result.sido.isNotEmpty && result.sigungu.isNotEmpty) {
+            return result;
+          }
+        }
+      } catch (e) {
+        debugPrint('Kakao coord2RegionCode 실패: $e');
+      }
+    }
+
+    // 2차: 기기 reverse geocoding으로 재시도.
+    // lost_search_page에서도 이미 geocoding 패키지를 사용하고 있으므로
+    // REST API 키를 앱에 넣지 않고 지역명을 얻을 수 있다.
+    try {
+      final placemarks = await Geocoding(locale: const Locale('ko', 'KR'))
+          .placemarkFromCoordinates(
+            latLng.latitude,
+            latLng.longitude,
+          )
+          .timeout(const Duration(seconds: 6));
+
+      for (final placemark in placemarks) {
+        final sidoCandidates = <String>[
+          placemark.administrativeArea ?? '',
+          placemark.locality ?? '',
+        ];
+
+        String sido = '';
+        for (final candidate in sidoCandidates) {
+          final normalized = _canonicalSido(candidate);
+          if (_isSupportedSido(normalized)) {
+            sido = normalized;
+            break;
+          }
+        }
+
+        if (sido.isEmpty) {
+          continue;
+        }
+
+        final sigunguCandidates = <String>[
+          placemark.subAdministrativeArea ?? '',
+          placemark.locality ?? '',
+          placemark.subLocality ?? '',
+          placemark.name ?? '',
+        ];
+
+        String sigungu = '';
+        for (final candidate in sigunguCandidates) {
+          sigungu = _normalizeSigunguForSearch(sido, candidate);
+          if (sigungu.isNotEmpty) {
+            break;
+          }
+        }
+
+        String eupmyeondong = '';
+        for (final candidate in <String>[
+          placemark.subLocality ?? '',
+          placemark.thoroughfare ?? '',
+          placemark.name ?? '',
+        ]) {
+          final value = candidate.trim();
+          if (_looksLikeEupmyeondong(value)) {
+            eupmyeondong = value.split(' ').last;
+            break;
+          }
+        }
+
+        // 세종은 일반적인 시/군/구 2단계가 없어서 앱의 대표 지역 키를 세종시로 통일
+        if (sido == '세종특별자치시' && sigungu.isEmpty) {
+          sigungu = '세종시';
+        }
+
+        if (sigungu.isNotEmpty) {
+          return _EditRegionSelection(
+            sido: sido,
+            sigungu: sigungu,
+            eupmyeondong: eupmyeondong,
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('reverse geocoding 실패: $e');
+    }
+
+    return _EditRegionSelection.empty;
+  }
+
+  _EditRegionSelection _normalizeResolvedRegion({
+    required String sidoRaw,
+    required String sigunguRaw,
+    required String eupmyeondongRaw,
+  }) {
+    final sido = _canonicalSido(sidoRaw);
+
+    if (!_isSupportedSido(sido)) {
+      return _EditRegionSelection.empty;
+    }
+
+    var sigungu = _normalizeSigunguForSearch(sido, sigunguRaw);
+    var eupmyeondong = eupmyeondongRaw.trim();
+
+    if (sido == '세종특별자치시') {
+      sigungu = '세종시';
+      if (eupmyeondong.isEmpty && _looksLikeEupmyeondong(sigunguRaw)) {
+        eupmyeondong = sigunguRaw.trim().split(' ').last;
+      }
+    }
+
+    return _EditRegionSelection(
+      sido: sido,
+      sigungu: sigungu,
+      eupmyeondong: eupmyeondong,
+    );
+  }
+
+  bool _isSupportedSido(String value) {
+    return const {
+      '서울특별시',
+      '부산광역시',
+      '대구광역시',
+      '인천광역시',
+      '광주광역시',
+      '대전광역시',
+      '울산광역시',
+      '세종특별자치시',
+      '경기도',
+      '강원특별자치도',
+      '충청북도',
+      '충청남도',
+      '전북특별자치도',
+      '전라남도',
+      '경상북도',
+      '경상남도',
+      '제주특별자치도',
+    }.contains(value);
+  }
+
+  String _normalizeSigunguForSearch(String sido, String raw) {
+    final value = raw.trim().replaceAll(RegExp(r'\s+'), ' ');
+    if (value.isEmpty) {
+      return '';
+    }
+
+    if (sido == '세종특별자치시') {
+      return '세종시';
+    }
+
+    final tokens = value.split(' ');
+
+    final isMetro = const {
+      '서울특별시',
+      '부산광역시',
+      '대구광역시',
+      '인천광역시',
+      '광주광역시',
+      '대전광역시',
+      '울산광역시',
+    }.contains(sido);
+
+    if (isMetro) {
+      for (final token in tokens) {
+        if (token.endsWith('구') || token.endsWith('군')) {
+          return token;
+        }
+      }
+    } else {
+      // 도 단위 지역은 수원시 팔달구처럼 들어와도 검색 필터 기준은 수원시.
+      for (final token in tokens) {
+        if (token.endsWith('시') || token.endsWith('군')) {
+          return token;
+        }
+      }
+
+      // 제주도는 제주시/서귀포시가 locality 쪽에만 잡히는 경우가 있다.
+      if (sido == '제주특별자치도') {
+        for (final token in tokens) {
+          if (token == '제주시' || token == '서귀포시') {
+            return token;
+          }
+        }
+      }
+    }
+
+    return '';
+  }
+
+  bool _looksLikeEupmyeondong(String raw) {
+    final value = raw.trim();
+    if (value.isEmpty) {
+      return false;
+    }
+
+    final last = value.split(RegExp(r'\s+')).last;
+    return last.endsWith('읍') ||
+        last.endsWith('면') ||
+        last.endsWith('동') ||
+        last.endsWith('가') ||
+        last.endsWith('리');
+  }
 
 
   Future<String?> _resolveAddress(LatLng latLng) async {
@@ -2238,8 +2284,6 @@ class _FoundItemLocationEditPageState extends State<_FoundItemLocationEditPage> 
 
     }
 
-
-
     try {
 
       final response = await controller
@@ -2251,8 +2295,6 @@ class _FoundItemLocationEditPageState extends State<_FoundItemLocationEditPage> 
           )
 
           .timeout(const Duration(seconds: 3));
-
-
 
       if (response.list.isNotEmpty) {
 
@@ -2270,13 +2312,9 @@ class _FoundItemLocationEditPageState extends State<_FoundItemLocationEditPage> 
 
     } catch (_) {}
 
-
-
     return null;
 
   }
-
-
 
   String? _bestLocationLabel(
 
@@ -2292,8 +2330,6 @@ class _FoundItemLocationEditPageState extends State<_FoundItemLocationEditPage> 
 
     }
 
-
-
     final regionText = [
 
       region.sido,
@@ -2304,21 +2340,15 @@ class _FoundItemLocationEditPageState extends State<_FoundItemLocationEditPage> 
 
     ].where((value) => value.trim().isNotEmpty).join(' ');
 
-
-
     return regionText.isEmpty ? null : regionText;
 
   }
-
-
 
   @override
 
   Widget build(BuildContext context) {
 
     final mapCenter = widget.initialLocation ?? _currentLocation;
-
-
 
     return Scaffold(
 
@@ -2512,8 +2542,6 @@ class _FoundItemLocationEditPageState extends State<_FoundItemLocationEditPage> 
 
 }
 
-
-
 class _EditRegionSelection {
 
   const _EditRegionSelection({
@@ -2526,15 +2554,11 @@ class _EditRegionSelection {
 
   });
 
-
-
   final String sido;
 
   final String sigungu;
 
   final String eupmyeondong;
-
-
 
   static const empty = _EditRegionSelection(
 
@@ -2547,8 +2571,6 @@ class _EditRegionSelection {
   );
 
 }
-
-
 
 class _EditLocationStepShell extends StatelessWidget {
 
@@ -2564,8 +2586,6 @@ class _EditLocationStepShell extends StatelessWidget {
 
   });
 
-
-
   final String title;
 
   final Widget child;
@@ -2573,8 +2593,6 @@ class _EditLocationStepShell extends StatelessWidget {
   final VoidCallback onBack;
 
   final VoidCallback onClose;
-
-
 
   @override
 
@@ -2682,19 +2700,13 @@ class _EditLocationStepShell extends StatelessWidget {
 
 }
 
-
-
 class _EditMapGuideBubble extends StatelessWidget {
 
   const _EditMapGuideBubble({required this.isLoading, required this.message});
 
-
-
   final bool isLoading;
 
   final String? message;
-
-
 
   @override
 
@@ -2790,8 +2802,6 @@ class _EditMapGuideBubble extends StatelessWidget {
 
 }
 
-
-
 class _EditLocationLoadingMap extends StatelessWidget {
 
   const _EditLocationLoadingMap({
@@ -2804,15 +2814,11 @@ class _EditLocationLoadingMap extends StatelessWidget {
 
   });
 
-
-
   final bool isLoading;
 
   final String? message;
 
   final VoidCallback onRetry;
-
-
 
   @override
 
@@ -2916,8 +2922,6 @@ class _EditLocationLoadingMap extends StatelessWidget {
 
 }
 
-
-
 class _EditMapSelectionPanel extends StatelessWidget {
 
   const _EditMapSelectionPanel({
@@ -2932,8 +2936,6 @@ class _EditMapSelectionPanel extends StatelessWidget {
 
   });
 
-
-
   final String? label;
 
   final bool isPreviewResolving;
@@ -2941,8 +2943,6 @@ class _EditMapSelectionPanel extends StatelessWidget {
   final bool isResolvingAddress;
 
   final VoidCallback onConfirm;
-
-
 
   @override
 
@@ -3074,8 +3074,6 @@ class _EditMapSelectionPanel extends StatelessWidget {
 
 }
 
-
-
 class _EditSegmentedLocationControl extends StatelessWidget {
 
   const _EditSegmentedLocationControl({
@@ -3086,13 +3084,9 @@ class _EditSegmentedLocationControl extends StatelessWidget {
 
   });
 
-
-
   final bool useMapLocation;
 
   final ValueChanged<bool> onChanged;
-
-
 
   @override
 
@@ -3156,8 +3150,6 @@ class _EditSegmentedLocationControl extends StatelessWidget {
 
 }
 
-
-
 class _EditSegmentButton extends StatelessWidget {
 
   const _EditSegmentButton({
@@ -3170,15 +3162,11 @@ class _EditSegmentButton extends StatelessWidget {
 
   });
 
-
-
   final String text;
 
   final bool selected;
 
   final VoidCallback onTap;
-
-
 
   @override
 
@@ -3224,8 +3212,6 @@ class _EditSegmentButton extends StatelessWidget {
 
 }
 
-
-
 class _EditLocationButton extends StatelessWidget {
 
   const _EditLocationButton({
@@ -3238,15 +3224,11 @@ class _EditLocationButton extends StatelessWidget {
 
   });
 
-
-
   final String text;
 
   final bool selected;
 
   final VoidCallback onTap;
-
-
 
   @override
 
@@ -3289,8 +3271,6 @@ class _EditLocationButton extends StatelessWidget {
   }
 
 }
-
-
 
 class _EditSelectBox extends StatefulWidget {
   const _EditSelectBox({
@@ -3528,15 +3508,11 @@ class _EditPrimaryButton extends StatelessWidget {
 
   });
 
-
-
   final String text;
 
   final VoidCallback onTap;
 
   final bool enabled;
-
-
 
   @override
 

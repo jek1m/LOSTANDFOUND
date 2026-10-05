@@ -467,29 +467,7 @@ class _MainMapPageState extends State<MainMapPage> {
                       ),
                     ],
                   ),
-                  Positioned(
-                    left: 12,
-                    top: 0,
-                    child: TextButton.icon(
-                      onPressed: _openManageItems,
-                      style: TextButton.styleFrom(
-                        foregroundColor: const Color(0xFF6B7280),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 6,
-                        ),
-                        visualDensity: VisualDensity.compact,
-                      ),
-                      icon: const Icon(Icons.edit_outlined, size: 17),
-                      label: const Text(
-                        '수정/삭제',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ),
+
                 ],
               ),
             ),
@@ -522,7 +500,19 @@ class _MainMapPageState extends State<MainMapPage> {
                     top: 12,
                     left: 16,
                     right: 16,
-                    child: _locationStatusCard(),
+                    child: Row(
+                      children: [
+                        Expanded(child: _locationStatusCard()),
+                        const SizedBox(width: 8),
+                        MainBottomButton(
+                          text: '수정/삭제',
+                          icon: Icons.edit_outlined,
+                          colors: const [Color(0xFF2563EB), Color(0xFF1D4ED8)],
+                          onTap: _openManageItems,
+                          compact: true,
+                        ),
+                      ],
+                    ),
                   ),
                   Positioned(
                     right: 18,
@@ -701,7 +691,7 @@ class _MainMapPageState extends State<MainMapPage> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _mapStatusCard(
+          Flexible(child: _mapStatusCard(
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -711,13 +701,17 @@ class _MainMapPageState extends State<MainMapPage> {
                   color: Color(0xFF2563EB),
                 ),
                 const SizedBox(width: 7),
-                Text(
-                  '현재 지도 영역 · ${_nearbyItems.length}개',
-                  style: const TextStyle(fontWeight: FontWeight.w700),
+                Flexible(
+                  child: Text(
+                    '현재 지도 영역 · ${_nearbyItems.length}개',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
                 ),
               ],
             ),
-          ),
+          )),
           const SizedBox(width: 8),
           _mapStatusCard(
             child: InkWell(
@@ -755,17 +749,19 @@ class MainBottomButton extends StatelessWidget {
   final IconData icon;
   final List<Color> colors;
   final VoidCallback onTap;
+  final bool compact;
   const MainBottomButton({
     super.key,
     required this.text,
     required this.icon,
     required this.colors,
     required this.onTap,
+    this.compact = false,
   });
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 56,
+      height: compact ? 40 : 56,
       child: DecoratedBox(
         decoration: BoxDecoration(
           gradient: LinearGradient(colors: colors),
@@ -783,20 +779,24 @@ class MainBottomButton extends StatelessWidget {
           child: InkWell(
             borderRadius: BorderRadius.circular(14),
             onTap: onTap,
-            child: Row(
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: compact ? 10 : 0),
+              child: Row(
+              mainAxisSize: compact ? MainAxisSize.min : MainAxisSize.max,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(icon, color: Colors.white, size: 22),
+                Icon(icon, color: Colors.white, size: compact ? 17 : 22),
                 const SizedBox(width: 8),
                 Text(
                   text,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: Colors.white,
-                    fontSize: 15,
+                    fontSize: compact ? 12 : 15,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
               ],
+              ),
             ),
           ),
         ),
