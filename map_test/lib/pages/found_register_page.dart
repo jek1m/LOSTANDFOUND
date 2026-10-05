@@ -1,4 +1,3 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -6,12 +5,25 @@ import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:kakao_map_plugin/kakao_map_plugin.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 
 import '../models/found_item_registration.dart';
 import '../repositories/found_item_repository.dart';
 import '../services/found_item_ai_service.dart';
+import '../services/kakao_place_search_service.dart';
 
-enum _RegisterStep { photo, analyzing, confirm, detail, location, complete }
+part 'found_location_region_resolver.dart';
+part 'found_place_search_step.dart';
+
+enum _RegisterStep {
+  photo,
+  analyzing,
+  confirm,
+  detail,
+  location,
+  placeSearch,
+  complete,
+}
 
 class _LocationSelection {
   const _LocationSelection({
@@ -45,20 +57,6 @@ class _RegionSelection {
     sigungu: '',
     eupmyeondong: '',
   );
-}
-
-class _RegionCenter {
-  const _RegionCenter({
-    required this.latitude,
-    required this.longitude,
-    required this.sido,
-    required this.sigungu,
-  });
-
-  final double latitude;
-  final double longitude;
-  final String sido;
-  final String sigungu;
 }
 
 class FoundRegisterPage extends StatefulWidget {
@@ -128,83 +126,267 @@ class _FoundRegisterPageState extends State<FoundRegisterPage> {
 
   static const Map<String, List<String>> _districtsByRegion = {
     '\uc11c\uc6b8': [
-      '\uac15\ub0a8\uad6c', '\uac15\ub3d9\uad6c', '\uac15\ubd81\uad6c', '\uac15\uc11c\uad6c', '\uad00\uc545\uad6c',
-      '\uad11\uc9c4\uad6c', '\uad6c\ub85c\uad6c', '\uae08\ucc9c\uad6c', '\ub178\uc6d0\uad6c', '\ub3c4\ubd09\uad6c',
-      '\ub3d9\ub300\ubb38\uad6c', '\ub3d9\uc791\uad6c', '\ub9c8\ud3ec\uad6c', '\uc11c\ub300\ubb38\uad6c', '\uc11c\ucd08\uad6c',
-      '\uc131\ub3d9\uad6c', '\uc131\ubd81\uad6c', '\uc1a1\ud30c\uad6c', '\uc591\ucc9c\uad6c', '\uc601\ub4f1\ud3ec\uad6c',
-      '\uc6a9\uc0b0\uad6c', '\uc740\ud3c9\uad6c', '\uc885\ub85c\uad6c', '\uc911\uad6c', '\uc911\ub791\uad6c',
+      '\uac15\ub0a8\uad6c',
+      '\uac15\ub3d9\uad6c',
+      '\uac15\ubd81\uad6c',
+      '\uac15\uc11c\uad6c',
+      '\uad00\uc545\uad6c',
+      '\uad11\uc9c4\uad6c',
+      '\uad6c\ub85c\uad6c',
+      '\uae08\ucc9c\uad6c',
+      '\ub178\uc6d0\uad6c',
+      '\ub3c4\ubd09\uad6c',
+      '\ub3d9\ub300\ubb38\uad6c',
+      '\ub3d9\uc791\uad6c',
+      '\ub9c8\ud3ec\uad6c',
+      '\uc11c\ub300\ubb38\uad6c',
+      '\uc11c\ucd08\uad6c',
+      '\uc131\ub3d9\uad6c',
+      '\uc131\ubd81\uad6c',
+      '\uc1a1\ud30c\uad6c',
+      '\uc591\ucc9c\uad6c',
+      '\uc601\ub4f1\ud3ec\uad6c',
+      '\uc6a9\uc0b0\uad6c',
+      '\uc740\ud3c9\uad6c',
+      '\uc885\ub85c\uad6c',
+      '\uc911\uad6c',
+      '\uc911\ub791\uad6c',
     ],
     '\ubd80\uc0b0': [
-      '\uac15\uc11c\uad6c', '\uae08\uc815\uad6c', '\uae30\uc7a5\uad70', '\ub0a8\uad6c', '\ub3d9\uad6c', '\ub3d9\ub798\uad6c',
-      '\ubd80\uc0b0\uc9c4\uad6c', '\ubd81\uad6c', '\uc0ac\uc0c1\uad6c', '\uc0ac\ud558\uad6c', '\uc11c\uad6c', '\uc218\uc601\uad6c',
-      '\uc5f0\uc81c\uad6c', '\uc601\ub3c4\uad6c', '\uc911\uad6c', '\ud574\uc6b4\ub300\uad6c',
+      '\uac15\uc11c\uad6c',
+      '\uae08\uc815\uad6c',
+      '\uae30\uc7a5\uad70',
+      '\ub0a8\uad6c',
+      '\ub3d9\uad6c',
+      '\ub3d9\ub798\uad6c',
+      '\ubd80\uc0b0\uc9c4\uad6c',
+      '\ubd81\uad6c',
+      '\uc0ac\uc0c1\uad6c',
+      '\uc0ac\ud558\uad6c',
+      '\uc11c\uad6c',
+      '\uc218\uc601\uad6c',
+      '\uc5f0\uc81c\uad6c',
+      '\uc601\ub3c4\uad6c',
+      '\uc911\uad6c',
+      '\ud574\uc6b4\ub300\uad6c',
     ],
     '\ub300\uad6c': [
-      '\uad70\uc704\uad70', '\ub0a8\uad6c', '\ub2ec\uc11c\uad6c', '\ub2ec\uc131\uad70', '\ub3d9\uad6c',
-      '\ubd81\uad6c', '\uc11c\uad6c', '\uc218\uc131\uad6c', '\uc911\uad6c',
+      '\uad70\uc704\uad70',
+      '\ub0a8\uad6c',
+      '\ub2ec\uc11c\uad6c',
+      '\ub2ec\uc131\uad70',
+      '\ub3d9\uad6c',
+      '\ubd81\uad6c',
+      '\uc11c\uad6c',
+      '\uc218\uc131\uad6c',
+      '\uc911\uad6c',
     ],
     '\uc778\ucc9c': [
-      '\uac15\ud654\uad70', '\uacc4\uc591\uad6c', '\ub0a8\ub3d9\uad6c', '\ub3d9\uad6c', '\ubbf8\ucd94\ud640\uad6c',
-      '\ubd80\ud3c9\uad6c', '\uc11c\uad6c', '\uc5f0\uc218\uad6c', '\uc639\uc9c4\uad70', '\uc911\uad6c',
+      '\uac15\ud654\uad70',
+      '\uacc4\uc591\uad6c',
+      '\ub0a8\ub3d9\uad6c',
+      '\ub3d9\uad6c',
+      '\ubbf8\ucd94\ud640\uad6c',
+      '\ubd80\ud3c9\uad6c',
+      '\uc11c\uad6c',
+      '\uc5f0\uc218\uad6c',
+      '\uc639\uc9c4\uad70',
+      '\uc911\uad6c',
     ],
-    '\uad11\uc8fc': ['\uad11\uc0b0\uad6c', '\ub0a8\uad6c', '\ub3d9\uad6c', '\ubd81\uad6c', '\uc11c\uad6c'],
-    '\ub300\uc804': ['\ub300\ub355\uad6c', '\ub3d9\uad6c', '\uc11c\uad6c', '\uc720\uc131\uad6c', '\uc911\uad6c'],
-    '\uc6b8\uc0b0': ['\ub0a8\uad6c', '\ub3d9\uad6c', '\ubd81\uad6c', '\uc6b8\uc8fc\uad70', '\uc911\uad6c'],
+    '\uad11\uc8fc': [
+      '\uad11\uc0b0\uad6c',
+      '\ub0a8\uad6c',
+      '\ub3d9\uad6c',
+      '\ubd81\uad6c',
+      '\uc11c\uad6c',
+    ],
+    '\ub300\uc804': [
+      '\ub300\ub355\uad6c',
+      '\ub3d9\uad6c',
+      '\uc11c\uad6c',
+      '\uc720\uc131\uad6c',
+      '\uc911\uad6c',
+    ],
+    '\uc6b8\uc0b0': [
+      '\ub0a8\uad6c',
+      '\ub3d9\uad6c',
+      '\ubd81\uad6c',
+      '\uc6b8\uc8fc\uad70',
+      '\uc911\uad6c',
+    ],
     '\uc138\uc885': ['\uc138\uc885\uc2dc'],
     '\uacbd\uae30': [
-      '\uac00\ud3c9\uad70', '\uace0\uc591\uc2dc', '\uacfc\ucc9c\uc2dc', '\uad11\uba85\uc2dc', '\uad11\uc8fc\uc2dc', '\uad6c\ub9ac\uc2dc',
-      '\uad70\ud3ec\uc2dc', '\uae40\ud3ec\uc2dc', '\ub0a8\uc591\uc8fc\uc2dc', '\ub3d9\ub450\ucc9c\uc2dc', '\ubd80\ucc9c\uc2dc', '\uc131\ub0a8\uc2dc',
-      '\uc218\uc6d0\uc2dc', '\uc2dc\ud765\uc2dc', '\uc548\uc0b0\uc2dc', '\uc548\uc131\uc2dc', '\uc548\uc591\uc2dc', '\uc591\uc8fc\uc2dc',
-      '\uc591\ud3c9\uad70', '\uc5ec\uc8fc\uc2dc', '\uc5f0\ucc9c\uad70', '\uc624\uc0b0\uc2dc', '\uc6a9\uc778\uc2dc', '\uc758\uc655\uc2dc',
-      '\uc758\uc815\ubd80\uc2dc', '\uc774\ucc9c\uc2dc', '\ud30c\uc8fc\uc2dc', '\ud3c9\ud0dd\uc2dc', '\ud3ec\ucc9c\uc2dc', '\ud558\ub0a8\uc2dc',
+      '\uac00\ud3c9\uad70',
+      '\uace0\uc591\uc2dc',
+      '\uacfc\ucc9c\uc2dc',
+      '\uad11\uba85\uc2dc',
+      '\uad11\uc8fc\uc2dc',
+      '\uad6c\ub9ac\uc2dc',
+      '\uad70\ud3ec\uc2dc',
+      '\uae40\ud3ec\uc2dc',
+      '\ub0a8\uc591\uc8fc\uc2dc',
+      '\ub3d9\ub450\ucc9c\uc2dc',
+      '\ubd80\ucc9c\uc2dc',
+      '\uc131\ub0a8\uc2dc',
+      '\uc218\uc6d0\uc2dc',
+      '\uc2dc\ud765\uc2dc',
+      '\uc548\uc0b0\uc2dc',
+      '\uc548\uc131\uc2dc',
+      '\uc548\uc591\uc2dc',
+      '\uc591\uc8fc\uc2dc',
+      '\uc591\ud3c9\uad70',
+      '\uc5ec\uc8fc\uc2dc',
+      '\uc5f0\ucc9c\uad70',
+      '\uc624\uc0b0\uc2dc',
+      '\uc6a9\uc778\uc2dc',
+      '\uc758\uc655\uc2dc',
+      '\uc758\uc815\ubd80\uc2dc',
+      '\uc774\ucc9c\uc2dc',
+      '\ud30c\uc8fc\uc2dc',
+      '\ud3c9\ud0dd\uc2dc',
+      '\ud3ec\ucc9c\uc2dc',
+      '\ud558\ub0a8\uc2dc',
       '\ud654\uc131\uc2dc',
     ],
     '\uac15\uc6d0': [
-      '\uac15\ub989\uc2dc', '\uace0\uc131\uad70', '\ub3d9\ud574\uc2dc', '\uc0bc\ucc99\uc2dc', '\uc18d\ucd08\uc2dc', '\uc591\uad6c\uad70',
-      '\uc591\uc591\uad70', '\uc601\uc6d4\uad70', '\uc6d0\uc8fc\uc2dc', '\uc778\uc81c\uad70', '\uc815\uc120\uad70', '\ucca0\uc6d0\uad70',
-      '\ucd98\ucc9c\uc2dc', '\ud0dc\ubc31\uc2dc', '\ud3c9\ucc3d\uad70', '\ud64d\ucc9c\uad70', '\ud654\ucc9c\uad70', '\ud6a1\uc131\uad70',
+      '\uac15\ub989\uc2dc',
+      '\uace0\uc131\uad70',
+      '\ub3d9\ud574\uc2dc',
+      '\uc0bc\ucc99\uc2dc',
+      '\uc18d\ucd08\uc2dc',
+      '\uc591\uad6c\uad70',
+      '\uc591\uc591\uad70',
+      '\uc601\uc6d4\uad70',
+      '\uc6d0\uc8fc\uc2dc',
+      '\uc778\uc81c\uad70',
+      '\uc815\uc120\uad70',
+      '\ucca0\uc6d0\uad70',
+      '\ucd98\ucc9c\uc2dc',
+      '\ud0dc\ubc31\uc2dc',
+      '\ud3c9\ucc3d\uad70',
+      '\ud64d\ucc9c\uad70',
+      '\ud654\ucc9c\uad70',
+      '\ud6a1\uc131\uad70',
     ],
     '\ucda9\ubd81': [
-      '\uad34\uc0b0\uad70', '\ub2e8\uc591\uad70', '\ubcf4\uc740\uad70', '\uc601\ub3d9\uad70', '\uc625\ucc9c\uad70',
-      '\uc74c\uc131\uad70', '\uc81c\ucc9c\uc2dc', '\uc99d\ud3c9\uad70', '\uc9c4\ucc9c\uad70', '\uccad\uc8fc\uc2dc', '\ucda9\uc8fc\uc2dc',
+      '\uad34\uc0b0\uad70',
+      '\ub2e8\uc591\uad70',
+      '\ubcf4\uc740\uad70',
+      '\uc601\ub3d9\uad70',
+      '\uc625\ucc9c\uad70',
+      '\uc74c\uc131\uad70',
+      '\uc81c\ucc9c\uc2dc',
+      '\uc99d\ud3c9\uad70',
+      '\uc9c4\ucc9c\uad70',
+      '\uccad\uc8fc\uc2dc',
+      '\ucda9\uc8fc\uc2dc',
     ],
     '\ucda9\ub0a8': [
-      '\uacc4\ub8e1\uc2dc', '\uacf5\uc8fc\uc2dc', '\uae08\uc0b0\uad70', '\ub17c\uc0b0\uc2dc', '\ub2f9\uc9c4\uc2dc',
-      '\ubcf4\ub839\uc2dc', '\ubd80\uc5ec\uad70', '\uc11c\uc0b0\uc2dc', '\uc11c\ucc9c\uad70', '\uc544\uc0b0\uc2dc',
-      '\uc608\uc0b0\uad70', '\ucc9c\uc548\uc2dc', '\uccad\uc591\uad70', '\ud0dc\uc548\uad70', '\ud64d\uc131\uad70',
+      '\uacc4\ub8e1\uc2dc',
+      '\uacf5\uc8fc\uc2dc',
+      '\uae08\uc0b0\uad70',
+      '\ub17c\uc0b0\uc2dc',
+      '\ub2f9\uc9c4\uc2dc',
+      '\ubcf4\ub839\uc2dc',
+      '\ubd80\uc5ec\uad70',
+      '\uc11c\uc0b0\uc2dc',
+      '\uc11c\ucc9c\uad70',
+      '\uc544\uc0b0\uc2dc',
+      '\uc608\uc0b0\uad70',
+      '\ucc9c\uc548\uc2dc',
+      '\uccad\uc591\uad70',
+      '\ud0dc\uc548\uad70',
+      '\ud64d\uc131\uad70',
     ],
     '\uc804\ubd81': [
-      '\uace0\ucc3d\uad70', '\uad70\uc0b0\uc2dc', '\uae40\uc81c\uc2dc', '\ub0a8\uc6d0\uc2dc', '\ubb34\uc8fc\uad70',
-      '\ubd80\uc548\uad70', '\uc21c\ucc3d\uad70', '\uc644\uc8fc\uad70', '\uc775\uc0b0\uc2dc', '\uc784\uc2e4\uad70',
-      '\uc7a5\uc218\uad70', '\uc804\uc8fc\uc2dc', '\uc815\uc74d\uc2dc', '\uc9c4\uc548\uad70',
+      '\uace0\ucc3d\uad70',
+      '\uad70\uc0b0\uc2dc',
+      '\uae40\uc81c\uc2dc',
+      '\ub0a8\uc6d0\uc2dc',
+      '\ubb34\uc8fc\uad70',
+      '\ubd80\uc548\uad70',
+      '\uc21c\ucc3d\uad70',
+      '\uc644\uc8fc\uad70',
+      '\uc775\uc0b0\uc2dc',
+      '\uc784\uc2e4\uad70',
+      '\uc7a5\uc218\uad70',
+      '\uc804\uc8fc\uc2dc',
+      '\uc815\uc74d\uc2dc',
+      '\uc9c4\uc548\uad70',
     ],
     '\uc804\ub0a8': [
-      '\uac15\uc9c4\uad70', '\uace0\ud765\uad70', '\uace1\uc131\uad70', '\uad11\uc591\uc2dc', '\uad6c\ub840\uad70',
-      '\ub098\uc8fc\uc2dc', '\ub2f4\uc591\uad70', '\ubaa9\ud3ec\uc2dc', '\ubb34\uc548\uad70', '\ubcf4\uc131\uad70',
-      '\uc21c\ucc9c\uc2dc', '\uc2e0\uc548\uad70', '\uc5ec\uc218\uc2dc', '\uc601\uad11\uad70', '\uc601\uc554\uad70',
-      '\uc644\ub3c4\uad70', '\uc7a5\uc131\uad70', '\uc7a5\ud765\uad70', '\uc9c4\ub3c4\uad70', '\ud568\ud3c9\uad70',
-      '\ud574\ub0a8\uad70', '\ud654\uc21c\uad70',
+      '\uac15\uc9c4\uad70',
+      '\uace0\ud765\uad70',
+      '\uace1\uc131\uad70',
+      '\uad11\uc591\uc2dc',
+      '\uad6c\ub840\uad70',
+      '\ub098\uc8fc\uc2dc',
+      '\ub2f4\uc591\uad70',
+      '\ubaa9\ud3ec\uc2dc',
+      '\ubb34\uc548\uad70',
+      '\ubcf4\uc131\uad70',
+      '\uc21c\ucc9c\uc2dc',
+      '\uc2e0\uc548\uad70',
+      '\uc5ec\uc218\uc2dc',
+      '\uc601\uad11\uad70',
+      '\uc601\uc554\uad70',
+      '\uc644\ub3c4\uad70',
+      '\uc7a5\uc131\uad70',
+      '\uc7a5\ud765\uad70',
+      '\uc9c4\ub3c4\uad70',
+      '\ud568\ud3c9\uad70',
+      '\ud574\ub0a8\uad70',
+      '\ud654\uc21c\uad70',
     ],
     '\uacbd\ubd81': [
-      '\uacbd\uc0b0\uc2dc', '\uacbd\uc8fc\uc2dc', '\uace0\ub839\uad70', '\uad6c\ubbf8\uc2dc', '\uae40\ucc9c\uc2dc',
-      '\ubb38\uacbd\uc2dc', '\ubd09\ud654\uad70', '\uc0c1\uc8fc\uc2dc', '\uc131\uc8fc\uad70', '\uc548\ub3d9\uc2dc',
-      '\uc601\ub355\uad70', '\uc601\uc591\uad70', '\uc601\uc8fc\uc2dc', '\uc601\ucc9c\uc2dc', '\uc608\ucc9c\uad70',
-      '\uc6b8\ub989\uad70', '\uc6b8\uc9c4\uad70', '\uc758\uc131\uad70', '\uccad\ub3c4\uad70', '\uccad\uc1a1\uad70',
-      '\uce60\uace1\uad70', '\ud3ec\ud56d\uc2dc',
+      '\uacbd\uc0b0\uc2dc',
+      '\uacbd\uc8fc\uc2dc',
+      '\uace0\ub839\uad70',
+      '\uad6c\ubbf8\uc2dc',
+      '\uae40\ucc9c\uc2dc',
+      '\ubb38\uacbd\uc2dc',
+      '\ubd09\ud654\uad70',
+      '\uc0c1\uc8fc\uc2dc',
+      '\uc131\uc8fc\uad70',
+      '\uc548\ub3d9\uc2dc',
+      '\uc601\ub355\uad70',
+      '\uc601\uc591\uad70',
+      '\uc601\uc8fc\uc2dc',
+      '\uc601\ucc9c\uc2dc',
+      '\uc608\ucc9c\uad70',
+      '\uc6b8\ub989\uad70',
+      '\uc6b8\uc9c4\uad70',
+      '\uc758\uc131\uad70',
+      '\uccad\ub3c4\uad70',
+      '\uccad\uc1a1\uad70',
+      '\uce60\uace1\uad70',
+      '\ud3ec\ud56d\uc2dc',
     ],
     '\uacbd\ub0a8': [
-      '\uac70\uc81c\uc2dc', '\uac70\ucc3d\uad70', '\uace0\uc131\uad70', '\uae40\ud574\uc2dc', '\ub0a8\ud574\uad70',
-      '\ubc00\uc591\uc2dc', '\uc0ac\ucc9c\uc2dc', '\uc0b0\uccad\uad70', '\uc591\uc0b0\uc2dc', '\uc758\ub839\uad70',
-      '\uc9c4\uc8fc\uc2dc', '\ucc3d\ub155\uad70', '\ucc3d\uc6d0\uc2dc', '\ud1b5\uc601\uc2dc', '\ud558\ub3d9\uad70',
-      '\ud568\uc548\uad70', '\ud568\uc591\uad70', '\ud569\ucc9c\uad70',
+      '\uac70\uc81c\uc2dc',
+      '\uac70\ucc3d\uad70',
+      '\uace0\uc131\uad70',
+      '\uae40\ud574\uc2dc',
+      '\ub0a8\ud574\uad70',
+      '\ubc00\uc591\uc2dc',
+      '\uc0ac\ucc9c\uc2dc',
+      '\uc0b0\uccad\uad70',
+      '\uc591\uc0b0\uc2dc',
+      '\uc758\ub839\uad70',
+      '\uc9c4\uc8fc\uc2dc',
+      '\ucc3d\ub155\uad70',
+      '\ucc3d\uc6d0\uc2dc',
+      '\ud1b5\uc601\uc2dc',
+      '\ud558\ub3d9\uad70',
+      '\ud568\uc548\uad70',
+      '\ud568\uc591\uad70',
+      '\ud569\ucc9c\uad70',
     ],
     '\uc81c\uc8fc': ['\uc11c\uadc0\ud3ec\uc2dc', '\uc81c\uc8fc\uc2dc'],
   };
 
   _RegisterStep _step = _RegisterStep.photo;
   String _selectedCategory = '\uac00\ubc29';
-  String _selectedRegion = '\uc11c\uc6b8';
-  String _selectedDistrict = '\uac15\ub0a8\uad6c';
   DateTime _foundDate = DateTime.now();
   bool _useMapLocation = true;
   bool _isSubmitting = false;
@@ -302,97 +484,6 @@ class _FoundRegisterPageState extends State<FoundRegisterPage> {
     }
   }
 
-  List<String> get _districtItems =>
-      _districtsByRegion[_selectedRegion] ?? const <String>[];
-
-  Future<_RegionCenter> _loadRegionCenter({
-    required String sido,
-    required String sigungu,
-  }) async {
-    final collection = FirebaseFirestore.instance.collection('region_centers');
-    final documentId = '${sido}_$sigungu';
-
-    Map<String, dynamic>? data;
-
-    // 1차: seed 스크립트에서 생성한 정확한 문서 ID로 조회
-    try {
-      final directSnapshot = await collection.doc(documentId).get();
-      if (directSnapshot.exists) {
-        data = directSnapshot.data();
-      }
-    } on FirebaseException catch (e) {
-      if (e.code == 'permission-denied') {
-        throw StateError(
-          'region_centers 읽기 권한이 없습니다. '
-          'Firestore Rules에서 region_centers 읽기를 허용해 주세요.',
-        );
-      }
-      rethrow;
-    }
-
-    // 2차: 혹시 문서 ID가 달라도 같은 시도의 문서를 가져와
-    // 앱에서 sigungu를 비교한다. 복합 인덱스 요구도 피할 수 있다.
-    if (data == null) {
-      try {
-        final querySnapshot = await collection
-            .where('sido', isEqualTo: sido)
-            .get();
-
-        for (final doc in querySnapshot.docs) {
-          final candidate = doc.data();
-          final candidateSigungu =
-              candidate['sigungu']?.toString().trim() ?? '';
-          if (candidateSigungu == sigungu) {
-            data = candidate;
-            break;
-          }
-        }
-      } on FirebaseException catch (e) {
-        if (e.code == 'permission-denied') {
-          throw StateError(
-            'region_centers 읽기 권한이 없습니다. '
-            'Firestore Rules에서 region_centers 읽기를 허용해 주세요.',
-          );
-        }
-        rethrow;
-      }
-    }
-
-    if (data == null) {
-      throw StateError(
-        '$sido $sigungu의 대표 좌표를 region_centers에서 찾지 못했습니다. '
-        '해당 문서가 실제로 생성됐는지 확인해 주세요. '
-        '예상 문서 ID: $documentId',
-      );
-    }
-
-    final latitudeValue = data['latitude'];
-    final longitudeValue = data['longitude'];
-
-    if (latitudeValue is! num || longitudeValue is! num) {
-      throw StateError(
-        '$sido $sigungu의 latitude/longitude 값이 올바르지 않습니다.',
-      );
-    }
-
-    final savedSido = data['sido']?.toString().trim() ?? '';
-    final savedSigungu = data['sigungu']?.toString().trim() ?? '';
-
-    final result = _RegionCenter(
-      latitude: latitudeValue.toDouble(),
-      longitude: longitudeValue.toDouble(),
-      sido: savedSido.isNotEmpty ? savedSido : sido,
-      sigungu: savedSigungu.isNotEmpty ? savedSigungu : sigungu,
-    );
-
-    debugPrint(
-      '지역 대표 좌표 로드 성공: ${result.sido} ${result.sigungu} '
-      '(${result.latitude}, ${result.longitude})',
-    );
-
-    return result;
-  }
-
   Future<void> _submit() async {
     if (!_canSubmit || _isSubmitting) {
       return;
@@ -409,52 +500,29 @@ class _FoundRegisterPageState extends State<FoundRegisterPage> {
       late final String eupmyeondong;
       late final String foundPlace;
 
-      if (_useMapLocation) {
-        final selectedLocation = _selectedLocationLatLng;
-        if (selectedLocation == null) {
-          throw StateError('지도에서 습득 위치를 선택해 주세요.');
-        }
-
-        if (_sido.trim().isEmpty || _sigungu.trim().isEmpty) {
-          throw StateError(
-            '선택한 지도 위치의 지역 정보를 확인하지 못했습니다. '
-            '지도를 다시 열어 위치를 다시 선택해 주세요.',
-          );
-        }
-
-        latitude = selectedLocation.latitude;
-        longitude = selectedLocation.longitude;
-        sido = _sido.trim();
-        sigungu = _sigungu.trim();
-        eupmyeondong = _eupmyeondong.trim();
-        // 지도에서 선택했더라도 DB에는 전체 도로명/지번 주소를 넣지 않고
-        // 우리 검색 기준인 시도 + 시군구까지만 저장한다.
-        foundPlace = '$sido $sigungu';
-      } else {
-        sido = _normalizeSido(_selectedRegion);
-        sigungu = _selectedDistrict.trim();
-        eupmyeondong = '';
-
-        if (sigungu.isEmpty) {
-          throw StateError('시/군/구를 선택해 주세요.');
-        }
-
-        final regionCenter = await _loadRegionCenter(
-          sido: sido,
-          sigungu: sigungu,
-        );
-
-        latitude = regionCenter.latitude;
-        longitude = regionCenter.longitude;
-
-        // Firestore에 저장된 대표 지역명을 최종 기준으로 사용한다.
-        sido = regionCenter.sido;
-        sigungu = regionCenter.sigungu;
-        foundPlace = '$sido $sigungu';
+      final selectedLocation = _selectedLocationLatLng;
+      if (selectedLocation == null ||
+          !(_mapLocation?.trim().isNotEmpty ?? false)) {
+        throw StateError('지도 또는 장소 검색에서 습득 위치를 선택해 주세요.');
       }
 
+      if (_sido.trim().isEmpty || _sigungu.trim().isEmpty) {
+        throw StateError('선택한 위치의 지역 정보를 확인하지 못했습니다. 위치를 다시 선택해 주세요.');
+      }
+
+      latitude = selectedLocation.latitude;
+      longitude = selectedLocation.longitude;
+      sido = _sido.trim();
+      sigungu = _sigungu.trim();
+      eupmyeondong = _eupmyeondong.trim();
+      foundPlace = [
+        sido,
+        sigungu,
+        eupmyeondong,
+      ].where((region) => region.isNotEmpty).join(' ');
+
       debugPrint(
-        '최종 등록 위치: mode=${_useMapLocation ? 'map' : 'region'}, '
+        '최종 등록 위치: mode=${_useMapLocation ? 'map' : 'place-search'}, '
         'sido=$sido, sigungu=$sigungu, eupmyeondong=$eupmyeondong, '
         'lat=$latitude, lon=$longitude, foundPlace=$foundPlace',
       );
@@ -502,34 +570,12 @@ class _FoundRegisterPageState extends State<FoundRegisterPage> {
     }
   }
 
-  String _normalizeSido(String value) {
-    const sidoMap = {
-      '\uc11c\uc6b8': '\uc11c\uc6b8\ud2b9\ubcc4\uc2dc',
-      '\ubd80\uc0b0': '\ubd80\uc0b0\uad11\uc5ed\uc2dc',
-      '\ub300\uad6c': '\ub300\uad6c\uad11\uc5ed\uc2dc',
-      '\uc778\ucc9c': '\uc778\ucc9c\uad11\uc5ed\uc2dc',
-      '\uad11\uc8fc': '\uad11\uc8fc\uad11\uc5ed\uc2dc',
-      '\ub300\uc804': '\ub300\uc804\uad11\uc5ed\uc2dc',
-      '\uc6b8\uc0b0': '\uc6b8\uc0b0\uad11\uc5ed\uc2dc',
-      '\uc138\uc885': '\uc138\uc885\ud2b9\ubcc4\uc790\uce58\uc2dc',
-      '\uacbd\uae30': '\uacbd\uae30\ub3c4',
-      '\uac15\uc6d0': '\uac15\uc6d0\ud2b9\ubcc4\uc790\uce58\ub3c4',
-      '\ucda9\ubd81': '\ucda9\uccad\ubd81\ub3c4',
-      '\ucda9\ub0a8': '\ucda9\uccad\ub0a8\ub3c4',
-      '\uc804\ubd81': '\uc804\ubd81\ud2b9\ubcc4\uc790\uce58\ub3c4',
-      '\uc804\ub0a8': '\uc804\ub77c\ub0a8\ub3c4',
-      '\uacbd\ubd81': '\uacbd\uc0c1\ubd81\ub3c4',
-      '\uacbd\ub0a8': '\uacbd\uc0c1\ub0a8\ub3c4',
-      '\uc81c\uc8fc': '\uc81c\uc8fc\ud2b9\ubcc4\uc790\uce58\ub3c4',
-    };
-
-    return sidoMap[value] ?? value;
-  }
-
   bool get _canSubmit {
-    final hasLocation = _useMapLocation
-        ? _mapLocation != null
-        : _selectedRegion.isNotEmpty && _selectedDistrict.isNotEmpty;
+    final hasLocation =
+        _selectedLocationLatLng != null &&
+        (_mapLocation?.trim().isNotEmpty ?? false) &&
+        _sido.isNotEmpty &&
+        _sigungu.isNotEmpty;
     return hasLocation &&
         _passwordController.text.trim().isNotEmpty &&
         _contactController.text.trim().isNotEmpty;
@@ -583,10 +629,6 @@ class _FoundRegisterPageState extends State<FoundRegisterPage> {
               foundDateText: _dateLabel(_foundDate),
               useMapLocation: _useMapLocation,
               mapLocation: _mapLocation,
-              selectedRegion: _selectedRegion,
-              selectedDistrict: _selectedDistrict,
-              regions: _regions,
-              districts: _districtItems,
               passwordController: _passwordController,
               contactController: _contactController,
               descriptionController: _descriptionController,
@@ -596,20 +638,22 @@ class _FoundRegisterPageState extends State<FoundRegisterPage> {
               onClose: _close,
               onPickDate: _pickDate,
               onUseMapChanged: (value) {
-                setState(() => _useMapLocation = value);
-              },
-              onOpenMap: () => setState(() => _step = _RegisterStep.location),
-              onRegionChanged: (value) {
                 setState(() {
-                  _selectedRegion = value;
-                  final districts =
-                      _districtsByRegion[value] ?? const <String>[];
-                  _selectedDistrict =
-                      districts.isNotEmpty ? districts.first : '';
+                  final modeChanged = _useMapLocation != value;
+                  _useMapLocation = value;
+                  if (modeChanged || !value) {
+                    _mapLocation = null;
+                    _selectedLocationLatLng = null;
+                    _sido = '';
+                    _sigungu = '';
+                    _eupmyeondong = '';
+                  }
+                  if (!value) _step = _RegisterStep.placeSearch;
                 });
               },
-              onDistrictChanged: (value) {
-                setState(() => _selectedDistrict = value);
+              onOpenMap: () => setState(() => _step = _RegisterStep.location),
+              onOpenPlaceSearch: () {
+                setState(() => _step = _RegisterStep.placeSearch);
               },
               onFieldChanged: () => setState(() {}),
               onSubmit: _submit,
@@ -621,6 +665,22 @@ class _FoundRegisterPageState extends State<FoundRegisterPage> {
               onClose: _close,
               onPickLocation: (location) {
                 setState(() {
+                  _selectedLocationLatLng = location.latLng;
+                  _mapLocation = location.label;
+                  _sido = location.sido;
+                  _sigungu = location.sigungu;
+                  _eupmyeondong = location.eupmyeondong;
+                  _step = _RegisterStep.detail;
+                });
+              },
+            ),
+            _RegisterStep.placeSearch => _PlaceSearchStep(
+              key: const ValueKey('place-search'),
+              onBack: () => setState(() => _step = _RegisterStep.detail),
+              onClose: _close,
+              onPickLocation: (location) {
+                setState(() {
+                  _useMapLocation = false;
                   _selectedLocationLatLng = location.latLng;
                   _mapLocation = location.label;
                   _sido = location.sido;
@@ -938,10 +998,6 @@ class _DetailStep extends StatelessWidget {
     required this.foundDateText,
     required this.useMapLocation,
     required this.mapLocation,
-    required this.selectedRegion,
-    required this.selectedDistrict,
-    required this.regions,
-    required this.districts,
     required this.passwordController,
     required this.contactController,
     required this.descriptionController,
@@ -952,8 +1008,7 @@ class _DetailStep extends StatelessWidget {
     required this.onPickDate,
     required this.onUseMapChanged,
     required this.onOpenMap,
-    required this.onRegionChanged,
-    required this.onDistrictChanged,
+    required this.onOpenPlaceSearch,
     required this.onFieldChanged,
     required this.onSubmit,
   });
@@ -961,10 +1016,6 @@ class _DetailStep extends StatelessWidget {
   final String foundDateText;
   final bool useMapLocation;
   final String? mapLocation;
-  final String selectedRegion;
-  final String selectedDistrict;
-  final List<String> regions;
-  final List<String> districts;
   final TextEditingController passwordController;
   final TextEditingController contactController;
   final TextEditingController descriptionController;
@@ -975,8 +1026,7 @@ class _DetailStep extends StatelessWidget {
   final VoidCallback onPickDate;
   final ValueChanged<bool> onUseMapChanged;
   final VoidCallback onOpenMap;
-  final ValueChanged<String> onRegionChanged;
-  final ValueChanged<String> onDistrictChanged;
+  final VoidCallback onOpenPlaceSearch;
   final VoidCallback onFieldChanged;
   final VoidCallback onSubmit;
 
@@ -1023,19 +1073,12 @@ class _DetailStep extends StatelessWidget {
               selected: mapLocation != null,
               onTap: onOpenMap,
             )
-          else ...[
-            _SelectBox(
-              value: selectedRegion,
-              items: regions,
-              onChanged: onRegionChanged,
+          else
+            _LocationButton(
+              text: mapLocation ?? '건물 또는 장소를 검색해 주세요',
+              selected: mapLocation != null,
+              onTap: onOpenPlaceSearch,
             ),
-            const SizedBox(height: 8),
-            _SelectBox(
-              value: selectedDistrict,
-              items: districts,
-              onChanged: onDistrictChanged,
-            ),
-          ],
           const SizedBox(height: 14),
           const _RequiredLabel('\ud328\uc2a4\uc6cc\ub4dc'),
           _InputBox(
@@ -1267,11 +1310,7 @@ class _LocationStepState extends State<_LocationStep> {
       }
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            '위치 정보를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.',
-          ),
-        ),
+        const SnackBar(content: Text('위치 정보를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.')),
       );
     } finally {
       if (mounted) {
@@ -1397,10 +1436,7 @@ class _LocationStepState extends State<_LocationStep> {
       try {
         final response = await controller
             .coord2RegionCode(
-              Coord2RegionCodeRequest(
-                x: latLng.longitude,
-                y: latLng.latitude,
-              ),
+              Coord2RegionCodeRequest(x: latLng.longitude, y: latLng.latitude),
             )
             .timeout(const Duration(seconds: 3));
 
@@ -1438,10 +1474,7 @@ class _LocationStepState extends State<_LocationStep> {
     // REST API 키를 앱에 넣지 않고 지역명을 얻을 수 있다.
     try {
       final placemarks = await Geocoding(locale: const Locale('ko', 'KR'))
-          .placemarkFromCoordinates(
-            latLng.latitude,
-            latLng.longitude,
-          )
+          .placemarkFromCoordinates(latLng.latitude, latLng.longitude)
           .timeout(const Duration(seconds: 6));
 
       for (final placemark in placemarks) {
@@ -2566,9 +2599,7 @@ class _SelectBoxState extends State<_SelectBox> {
         final targetOffset = selectedIndex * itemHeight;
         final maxOffset = _scrollController.position.maxScrollExtent;
 
-        _scrollController.jumpTo(
-          targetOffset.clamp(0.0, maxOffset),
-        );
+        _scrollController.jumpTo(targetOffset.clamp(0.0, maxOffset));
       });
     }
   }
@@ -2595,10 +2626,7 @@ class _SelectBoxState extends State<_SelectBox> {
             onTap: widget.items.isEmpty ? null : _toggle,
             child: Container(
               constraints: const BoxConstraints(minHeight: 48),
-              padding: const EdgeInsets.symmetric(
-                horizontal: 14,
-                vertical: 12,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
@@ -2643,15 +2671,11 @@ class _SelectBoxState extends State<_SelectBox> {
               : Container(
                   key: const ValueKey('inline-select-list'),
                   margin: const EdgeInsets.only(top: 6),
-                  constraints: const BoxConstraints(
-                    maxHeight: 230,
-                  ),
+                  constraints: const BoxConstraints(maxHeight: 230),
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: const Color(0xFFD3DEFF),
-                    ),
+                    border: Border.all(color: const Color(0xFFD3DEFF)),
                   ),
                   clipBehavior: Clip.antiAlias,
                   child: Scrollbar(
@@ -2662,10 +2686,8 @@ class _SelectBoxState extends State<_SelectBox> {
                       shrinkWrap: true,
                       padding: EdgeInsets.zero,
                       itemCount: widget.items.length,
-                      separatorBuilder: (_, _) => const Divider(
-                        height: 1,
-                        color: Color(0xFFF1F5F9),
-                      ),
+                      separatorBuilder: (_, _) =>
+                          const Divider(height: 1, color: Color(0xFFF1F5F9)),
                       itemBuilder: (context, index) {
                         final item = widget.items[index];
                         final selected = item == selectedValue;

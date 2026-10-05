@@ -11,9 +11,7 @@ import 'pages/main_map_page.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
   await dotenv.load(fileName: '.env');
 
@@ -23,13 +21,15 @@ Future<void> main() async {
     throw Exception('KAKAO_JAVASCRIPT_KEY가 .env 파일에 없습니다.');
   }
 
-  AuthRepository.initialize(appKey: kakaoKey);
+  final kakaoBaseUrl = dotenv.env['KAKAO_BASE_URL']?.trim();
+  AuthRepository.initialize(
+    appKey: kakaoKey,
+    baseUrl: kakaoBaseUrl == null || kakaoBaseUrl.isEmpty ? null : kakaoBaseUrl,
+  );
 
   // 상단 상태바 + 하단 내비게이션 바 숨김
   // 화면 가장자리에서 스와이프하면 잠깐 나타남
-  await SystemChrome.setEnabledSystemUIMode(
-    SystemUiMode.immersiveSticky,
-  );
+  await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
 
   runApp(const MyApp());
 }

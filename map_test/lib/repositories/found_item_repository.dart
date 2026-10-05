@@ -6,6 +6,50 @@ import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../models/found_item_registration.dart';
+import '../utils/geohash_query.dart';
+
+Map<String, dynamic> buildFoundItemFirestoreData({
+  required String atcId,
+  required FoundItemRegistration item,
+  required String imageUrl,
+}) {
+  final latitude = item.latitude;
+  final longitude = item.longitude;
+  final administrativeArea = [
+    item.sido.trim(),
+    item.sigungu.trim(),
+    item.eupmyeondong.trim(),
+  ].where((region) => region.isNotEmpty).join(' ');
+  final geohash = latitude != null && longitude != null
+      ? encodeGeohash(latitude, longitude, precision: 8)
+      : '';
+
+  return <String, dynamic>{
+    'atcId': atcId,
+    'fdPrdtNm': item.itemName.trim(),
+    'prdtClNmMg': item.category.trim(),
+    'prdtClNmMn': '',
+    'fndPlace': administrativeArea,
+    'fndDescription': item.description.trim(),
+    'fdYmd': _formatDate(item.foundAt),
+    'fdFilePathImg': imageUrl,
+    'tel': item.contact.trim(),
+    'polUse': 'user',
+    'password': item.password.trim(),
+    'latitude': latitude,
+    'longitude': longitude,
+    'geohash': geohash,
+    'sido': item.sido.trim(),
+    'sigungu': item.sigungu.trim(),
+    'eupmyeondong': item.eupmyeondong.trim(),
+  };
+}
+
+String _formatDate(DateTime date) {
+  return '${date.year}-'
+      '${date.month.toString().padLeft(2, '0')}-'
+      '${date.day.toString().padLeft(2, '0')}';
+}
 
 abstract class FoundItemRepository {
   Future<String> registerFoundItem(
@@ -82,42 +126,11 @@ class FirebaseFoundItemRepository implements FoundItemRepository {
             .timeout(const Duration(seconds: 15));
       }
 
-      final latitude = item.latitude;
-      final longitude = item.longitude;
-
-      final geohash = latitude != null && longitude != null
-          ? _encodeGeohash(
-              latitude,
-              longitude,
-              precision: 8,
-            )
-          : '';
-
-      final data = <String, dynamic>{
-        'atcId': atcId,
-        'fdPrdtNm': item.itemName.trim(),
-        'prdtClNmMg': item.category.trim(),
-
-        // 요청사항: 소분류는 항상 빈 문자열
-        'prdtClNmMn': '',
-
-        'fndPlace': item.foundPlace.trim(),
-        'fndDescription': item.description.trim(),
-        'fdYmd': _formatDate(item.foundAt),
-        'fdFilePathImg': imageUrl,
-        'tel': item.contact.trim(),
-
-        // 경찰청 자료는 pol, 사용자 등록 자료는 user
-        'polUse': 'user',
-
-        'password': item.password.trim(),
-        'latitude': latitude,
-        'longitude': longitude,
-        'geohash': geohash,
-        'sido': item.sido.trim(),
-        'sigungu': item.sigungu.trim(),
-        'eupmyeondong': item.eupmyeondong.trim(),
-      };
+      final data = buildFoundItemFirestoreData(
+        atcId: atcId,
+        item: item,
+        imageUrl: imageUrl,
+      );
 
       currentStage = 'Cloud Firestore 정보 저장';
       debugPrint('[습득물 등록] $currentStage');
@@ -175,12 +188,6 @@ class FirebaseFoundItemRepository implements FoundItemRepository {
     return 'S$datePart$numberPart';
   }
 
-  String _formatDate(DateTime date) {
-    return '${date.year}-'
-        '${date.month.toString().padLeft(2, '0')}-'
-        '${date.day.toString().padLeft(2, '0')}';
-  }
-
   String _imageExtension(String fileName) {
     final lowerName = fileName.toLowerCase().trim();
     final extension = lowerName.contains('.')
@@ -218,58 +225,6 @@ class FirebaseFoundItemRepository implements FoundItemRepository {
     }
   }
 
-  String _encodeGeohash(
-    double latitude,
-    double longitude, {
-    int precision = 8,
-  }) {
-    const base32 = '0123456789bcdefghjkmnpqrstuvwxyz';
-    const bits = [16, 8, 4, 2, 1];
-
-    final latitudeInterval = [-90.0, 90.0];
-    final longitudeInterval = [-180.0, 180.0];
-    final result = StringBuffer();
-
-    var bitIndex = 0;
-    var characterValue = 0;
-    var useLongitude = true;
-
-    while (result.length < precision) {
-      if (useLongitude) {
-        final midpoint =
-            (longitudeInterval[0] + longitudeInterval[1]) / 2;
-
-        if (longitude >= midpoint) {
-          characterValue |= bits[bitIndex];
-          longitudeInterval[0] = midpoint;
-        } else {
-          longitudeInterval[1] = midpoint;
-        }
-      } else {
-        final midpoint =
-            (latitudeInterval[0] + latitudeInterval[1]) / 2;
-
-        if (latitude >= midpoint) {
-          characterValue |= bits[bitIndex];
-          latitudeInterval[0] = midpoint;
-        } else {
-          latitudeInterval[1] = midpoint;
-        }
-      }
-
-      useLongitude = !useLongitude;
-
-      if (bitIndex < 4) {
-        bitIndex++;
-      } else {
-        result.write(base32[characterValue]);
-        bitIndex = 0;
-        characterValue = 0;
-      }
-    }
-
-    return result.toString();
-  }
 }
 
 class MockFoundItemRepository implements FoundItemRepository {
