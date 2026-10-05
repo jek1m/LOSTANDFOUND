@@ -166,6 +166,16 @@ class _LostSearchPageState extends State<LostSearchPage> {
       _locationMessage = null;
     });
 
+    DetectedSearchRegion? partialRegion;
+    void finishLookup(String message) {
+      final partial = partialRegion;
+      if (partial != null) {
+        _applyDetectedRegion(requestId, partial.region, null);
+      } else {
+        _finishLocationLookup(requestId, message);
+      }
+    }
+
     try {
       final customDetector = widget.regionDetector;
       if (customDetector != null) {
@@ -173,9 +183,22 @@ class _LostSearchPageState extends State<LostSearchPage> {
           final detected = await customDetector(
             requestPermission: requestPermission,
           );
-          if (detected != null) {
-            _applyDetectedRegion(requestId, detected.region, detected.subregion);
+          if (!_isActiveLocationRequest(requestId)) {
             return;
+          }
+          if (detected != null) {
+            final region = _findSupportedRegion([detected.region]);
+            if (region != null) {
+              final subregion = _findSupportedSubregion([
+                if (detected.subregion != null) detected.subregion!,
+              ], region);
+              if (subregion != null) {
+                _applyDetectedRegion(requestId, region, subregion);
+                return;
+              }
+              // 시·도만 받은 경우 기기 주소 조회로 시·군·구를 보완한다.
+              partialRegion = DetectedSearchRegion(region: region);
+            }
           }
         } catch (_) {
           // 메인 지도의 주소 변환이 실패하면 아래의 기기 위치 조회를 사용한다.
@@ -183,17 +206,14 @@ class _LostSearchPageState extends State<LostSearchPage> {
       }
 
       if (kIsWeb) {
-        _finishLocationLookup(
-          requestId,
-          '웹에서는 현재 위치의 지역명 자동 변환을 지원하지 않아요. 지역을 직접 선택해 주세요.',
-        );
+        finishLookup('웹에서는 현재 위치의 지역명 자동 변환을 지원하지 않아요. 지역을 직접 선택해 주세요.');
         return;
       }
 
       if (!await Geolocator.isLocationServiceEnabled().timeout(
         const Duration(seconds: 5),
       )) {
-        _finishLocationLookup(requestId, '위치 서비스를 켜면 현재 지역을 자동으로 설정할 수 있어요.');
+        finishLookup('위치 서비스를 켜면 현재 지역을 자동으로 설정할 수 있어요.');
         return;
       }
 
@@ -207,37 +227,48 @@ class _LostSearchPageState extends State<LostSearchPage> {
       }
 
       if (permission == LocationPermission.denied) {
-        _finishLocationLookup(requestId, '현재 위치로 지역 설정을 하려면 위치 권한을 허용해 주세요.');
+        finishLookup('현재 위치로 지역 설정을 하려면 위치 권한을 허용해 주세요.');
         return;
       }
 
       if (permission == LocationPermission.deniedForever) {
-        _finishLocationLookup(requestId, '설정에서 위치 권한을 허용한 뒤 다시 시도해 주세요.');
+        finishLookup('설정에서 위치 권한을 허용한 뒤 다시 시도해 주세요.');
         return;
       }
 
       final position = await getReliableCurrentPosition();
 
-      final placemarks = await Geocoding(locale: const Locale('ko', 'KR'))
-          .placemarkFromCoordinates(position.latitude, position.longitude)
+      // geocoding 5.0.0은 생성자의 locale을 전달하지 않아 메서드에 직접 지정한다.
+      final placemarks = await Geocoding()
+          .placemarkFromCoordinates(
+            position.latitude,
+            position.longitude,
+            locale: const Locale('ko', 'KR'),
+          )
           .timeout(const Duration(seconds: 10));
 
       if (placemarks.isEmpty) {
-        _finishLocationLookup(requestId, '현재 위치의 지역명을 확인하지 못했어요.');
+        finishLookup('현재 위치의 지역명을 확인하지 못했어요.');
         return;
       }
 
-      final placemark = placemarks.first;
-      final region = _findSupportedRegion(placemark);
-      if (region == null) {
-        _finishLocationLookup(requestId, '현재 위치는 지역 필터에서 찾지 못했어요.');
-        return;
+      for (final placemark in placemarks) {
+        final candidates = _placemarkParts(placemark);
+        final region =
+            _findSupportedRegion(candidates) ?? partialRegion?.region;
+        if (region == null) {
+          continue;
+        }
+        final subregion = _findSupportedSubregion(candidates, region);
+        if (subregion != null) {
+          _applyDetectedRegion(requestId, region, subregion);
+          return;
+        }
+        partialRegion = DetectedSearchRegion(region: region);
       }
-
-      final subregion = _findSupportedSubregion(placemark, region);
-      _applyDetectedRegion(requestId, region, subregion);
+      finishLookup('현재 위치는 지역 필터에서 찾지 못했어요.');
     } catch (_) {
-      _finishLocationLookup(requestId, '현재 위치를 확인하지 못했어요. 잠시 후 다시 시도해 주세요.');
+      finishLookup('현재 위치를 확인하지 못했어요. 잠시 후 다시 시도해 주세요.');
     }
   }
 
@@ -252,7 +283,7 @@ class _LostSearchPageState extends State<LostSearchPage> {
       _isLocating = false;
       _isUsingCurrentLocation = true;
       _locationMessage = subregion == null
-          ? '현재 위치 기준으로 $region을 선택했어요.'
+          ? '$region까지 확인했어요. 시·군·구는 확인하지 못해 직접 선택해 주세요.'
           : '현재 위치 기준으로 $region $subregion을 선택했어요.';
     });
   }
@@ -279,33 +310,47 @@ class _LostSearchPageState extends State<LostSearchPage> {
     _locationMessage = null;
   }
 
-  String? _findSupportedRegion(Placemark placemark) {
-    final candidates = _placemarkParts(placemark);
-    const aliases = {'강원특별자치도': '강원도', '전라북도': '전북특별자치도'};
+  String? _findSupportedRegion(Iterable<String> candidates) {
+    const aliases = {
+      '서울시': '서울특별시',
+      '서울': '서울특별시',
+      '강원특별자치도': '강원도',
+      '전라북도': '전북특별자치도',
+    };
 
     for (final candidate in candidates) {
-      final normalized = aliases[candidate] ?? candidate;
       for (final region in regions) {
-        if (normalized == region || normalized.contains(region)) {
+        if (_containsRegionName(candidate, region)) {
           return region;
+        }
+      }
+      for (final alias in aliases.entries) {
+        if (_containsRegionName(candidate, alias.key)) {
+          return alias.value;
         }
       }
     }
     return null;
   }
 
-  String? _findSupportedSubregion(Placemark placemark, String region) {
+  String? _findSupportedSubregion(Iterable<String> candidates, String region) {
     final supported = koreanSubregions[region] ?? const <String>[];
-    final candidates = _placemarkParts(placemark);
 
     for (final candidate in candidates) {
       for (final subregion in supported) {
-        if (candidate == subregion || candidate.contains(subregion)) {
+        if (_containsRegionName(candidate, subregion)) {
           return subregion;
         }
       }
     }
     return null;
+  }
+
+  bool _containsRegionName(String address, String name) {
+    // '관악구청' 같은 건물명의 일부를 지역으로 잘못 선택하지 않는다.
+    return RegExp(
+      '(^|[^가-힣a-zA-Z])${RegExp.escape(name)}(\$|[^가-힣a-zA-Z])',
+    ).hasMatch(address);
   }
 
   List<String> _placemarkParts(Placemark placemark) {
@@ -315,6 +360,7 @@ class _LostSearchPageState extends State<LostSearchPage> {
           placemark.locality,
           placemark.subLocality,
           placemark.name,
+          placemark.street,
         ]
         .whereType<String>()
         .map((value) => value.trim())

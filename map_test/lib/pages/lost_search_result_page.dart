@@ -7,6 +7,7 @@ import '../lost_models/lost_item.dart';
 import '../lost_models/lost_search_filter.dart';
 import '../utils/current_position.dart';
 import 'distance_reference_map_page.dart';
+import 'lost_item_detail_page.dart';
 
 enum _DistanceReferenceChoice { currentLocation, map }
 
@@ -35,7 +36,7 @@ class _LostSearchResultPageState extends State<LostSearchResultPage> {
   static const int _pageSize = 20;
   static final RegExp _searchSeparator = RegExp(r'[^0-9a-zA-Z가-힣]+');
 
-  LostSearchSortOption selectedSort = LostSearchSortOption.similarity;
+  LostSearchSortOption selectedSort = LostSearchSortOption.newest;
   DistanceReference? _distanceReference;
   final List<LostItem> _items = [];
   DocumentSnapshot<Map<String, dynamic>>? _lastDocument;
@@ -119,8 +120,15 @@ class _LostSearchResultPageState extends State<LostSearchResultPage> {
           formatDate: _formatDate,
           showDistance: selectedSort == LostSearchSortOption.nearest,
           distanceMeters: _distanceTo(items[index]),
+          onTap: () => _openItemDetail(items[index]),
         );
       },
+    );
+  }
+
+  void _openItemDetail(LostItem item) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => LostItemDetailPage(item: item)),
     );
   }
 
@@ -187,7 +195,7 @@ class _LostSearchResultPageState extends State<LostSearchResultPage> {
             children: [
               Expanded(
                 child: Text(
-                  _hasMore ? '불러온 검색 결과 $count건' : '검색 결과 $count건',
+                  _hasMore ? '검색결과 최신 $count건' : '검색결과 $count건',
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
@@ -788,80 +796,88 @@ class _LostItemCard extends StatelessWidget {
     required this.formatDate,
     required this.showDistance,
     required this.distanceMeters,
+    required this.onTap,
   });
 
   final LostItem item;
   final String Function(DateTime? date) formatDate;
   final bool showDistance;
   final double? distanceMeters;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
+    return Material(
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
+        side: const BorderSide(color: Color(0xFFE5E7EB)),
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _thumbnail(),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _thumbnail(),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: Text(
-                        item.fdPrdtNm,
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            item.fdPrdtNm,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF111827),
+                            ),
+                          ),
+                        ),
+                        if (item.prdtClNmMg != null)
+                          _categoryBadge(item.prdtClNmMg!),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    _infoRow(
+                      Icons.calendar_today_outlined,
+                      '습득일 ${formatDate(item.fdYmd)}',
+                    ),
+                    const SizedBox(height: 4),
+                    _infoRow(Icons.location_on_outlined, _locationText),
+                    if (showDistance) ...[
+                      const SizedBox(height: 4),
+                      _infoRow(
+                        Icons.near_me_outlined,
+                        distanceMeters == null
+                            ? '거리 정보 없음'
+                            : '기준 위치에서 ${_formatDistance(distanceMeters!)}',
+                      ),
+                    ],
+                    if (item.fndDescription != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        item.fndDescription!,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF111827),
+                          color: Color(0xFF6B7280),
+                          height: 1.35,
                         ),
                       ),
-                    ),
-                    if (item.prdtClNmMg != null)
-                      _categoryBadge(item.prdtClNmMg!),
+                    ],
                   ],
                 ),
-                const SizedBox(height: 8),
-                _infoRow(
-                  Icons.calendar_today_outlined,
-                  '습득일 ${formatDate(item.fdYmd)}',
-                ),
-                const SizedBox(height: 4),
-                _infoRow(Icons.location_on_outlined, _locationText),
-                if (showDistance) ...[
-                  const SizedBox(height: 4),
-                  _infoRow(
-                    Icons.near_me_outlined,
-                    distanceMeters == null
-                        ? '거리 정보 없음'
-                        : '기준 위치에서 ${_formatDistance(distanceMeters!)}',
-                  ),
-                ],
-                if (item.fndDescription != null) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    item.fndDescription!,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Color(0xFF6B7280),
-                      height: 1.35,
-                    ),
-                  ),
-                ],
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
