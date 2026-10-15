@@ -1720,17 +1720,22 @@ class _GradientButton extends StatelessWidget {
       height: 52,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [Color(0xFF9B2DF4), Color(0xFF4263F5)],
-          ),
+          color: enabled ? null : const Color(0xFFE5E7EB),
+          gradient: enabled
+              ? const LinearGradient(
+                  colors: [Color(0xFF9B2DF4), Color(0xFF4263F5)],
+                )
+              : null,
           borderRadius: BorderRadius.circular(10),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF4263F5).withValues(alpha: 0.25),
-              blurRadius: 16,
-              offset: const Offset(0, 8),
-            ),
-          ],
+          boxShadow: enabled
+              ? [
+                  BoxShadow(
+                    color: const Color(0xFF4263F5).withValues(alpha: 0.25),
+                    blurRadius: 16,
+                    offset: const Offset(0, 8),
+                  ),
+                ]
+              : null,
         ),
         child: Material(
           color: Colors.transparent,
@@ -1744,7 +1749,11 @@ class _GradientButton extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   if (icon != null) ...[
-                    Icon(icon, color: Colors.white, size: 20),
+                    Icon(
+                      icon,
+                      color: enabled ? Colors.white : const Color(0xFF9CA3AF),
+                      size: 20,
+                    ),
                     const SizedBox(width: 8),
                   ],
                   Flexible(
@@ -1752,8 +1761,8 @@ class _GradientButton extends StatelessWidget {
                       text,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: TextStyle(
+                        color: enabled ? Colors.white : const Color(0xFF9CA3AF),
                         fontSize: 15,
                         height: 1.2,
                         fontWeight: FontWeight.w900,
