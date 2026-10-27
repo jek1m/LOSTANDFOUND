@@ -1,4 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
+
+import 'package:crypto/crypto.dart';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 
@@ -245,7 +248,7 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
 
         widget.item.latitude != null && widget.item.longitude != null;
 
-    _useMapLocation = hasCoordinates;
+    _useMapLocation = true;
 
     _selectedLocationLatLng = hasCoordinates
 
@@ -360,7 +363,9 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
 
         _selectedLocationLatLng = selected.latLng;
 
-        _mapLocationLabel = selected.label;
+        _mapLocationLabel = _regionLabel(
+          selected.sido, selected.sigungu, selected.eupmyeondong,
+        );
 
         _selectedSido = selected.sido;
 
@@ -380,12 +385,6 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
 
     final place = widget.item.fndPlace?.trim() ?? '';
 
-    if (place.isNotEmpty && !_looksLikeCoordinates(place)) {
-
-      return place;
-
-    }
-
     final regionLabel = _regionLabel(
 
       widget.item.sido?.trim() ?? '',
@@ -400,6 +399,10 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
 
       return regionLabel;
 
+    }
+
+    if (place.isNotEmpty && !_looksLikeCoordinates(place)) {
+      return place;
     }
 
     return '지도에서 선택한 위치';
@@ -507,6 +510,51 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
 
   }
 
+  // 지역 선택 모드에서는 해당 시청·군청·구청 위치를 대표 좌표로 사용한다.
+  // 주소 검색에 실패한 경우 임의 좌표를 저장하지 않고 오류를 알린다.
+  Future<LatLng> _resolveDistrictOffice(String sido, String district) async {
+    final office = district.endsWith('구')
+        ? '구청'
+        : district.endsWith('군')
+            ? '군청'
+            : district.endsWith('시')
+                ? '시청'
+                : '시청';
+    final officeName = district.endsWith('구') || district.endsWith('군') || district.endsWith('시')
+        ? '${district.substring(0, district.length - 1)}$office'
+        : '$district$office';
+    final queries = <String>[
+      '$sido $district $officeName',
+      '$sido $officeName',
+      '$sido $district',
+    ];
+    for (final address in queries) {
+      try {
+        final locations = await Geocoding(locale: const Locale('ko', 'KR'))
+            .locationFromAddress(address)
+            .timeout(const Duration(seconds: 7));
+        if (locations.isNotEmpty) {
+          final location = locations.first;
+          if (location.latitude >= 33 && location.latitude <= 39 &&
+              location.longitude >= 124 && location.longitude <= 132) {
+            return LatLng(location.latitude, location.longitude);
+          }
+        }
+      } catch (error) {
+        debugPrint('지역 대표 좌표 검색 실패 ($address): $error');
+      }
+    }
+    throw StateError('$sido $district의 대표 위치를 찾지 못했습니다. 지도로 위치를 선택해 주세요.');
+  }
+
+  bool _passwordMatches(Map<String, dynamic> data) {
+    final stored = data['password']?.toString().trim() ?? '';
+    final hashed = sha256
+        .convert(utf8.encode('${widget.item.atcId}::${widget.password}'))
+        .toString();
+    return stored == widget.password || stored == hashed;
+  }
+
   Future<void> _save() async {
 
     if (_isSaving || _isDeleting) return;
@@ -609,7 +657,6 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
 
       if (_locationChanged) {
 
-        if (_useMapLocation) {
 
           final latLng = _selectedLocationLatLng ??
               ((widget.item.latitude != null && widget.item.longitude != null)
@@ -652,38 +699,6 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
 
           });
 
-        } else {
-
-          final sido = _normalizeSido(_selectedRegion);
-
-          final district = _selectedDistrict.trim();
-
-          if (district.isEmpty) {
-
-            throw StateError('지역을 선택해 주세요.');
-
-          }
-
-          updateData.addAll({
-
-            'fndPlace': '$sido $district',
-
-            'latitude': null,
-
-            'longitude': null,
-
-            'geohash': '',
-
-            'sido': sido,
-
-            'sigungu': district,
-
-            'eupmyeondong': '',
-
-          });
-
-        }
-
       }
 
       final docRef = FirebaseFirestore.instance
@@ -702,7 +717,7 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
 
       }
 
-      if (data['polUse'] != 'user' || data['password'] != widget.password) {
+      if (data['polUse'] != 'user' || !_passwordMatches(data)) {
 
         throw StateError('수정 권한을 확인하지 못했습니다.');
 
@@ -840,7 +855,7 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
 
       }
 
-      if (data['polUse'] != 'user' || data['password'] != widget.password) {
+      if (data['polUse'] != 'user' || !_passwordMatches(data)) {
 
         throw StateError('삭제 권한을 확인하지 못했습니다.');
 
@@ -952,7 +967,7 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
 
         child: ListView(
 
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.fromLTRB(20, 28, 20, 20),
 
           children: [
 
@@ -1054,80 +1069,12 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
 
             _label('습득 위치'),
 
-            _EditSegmentedLocationControl(
-
-              useMapLocation: _useMapLocation,
-
-              onChanged: busy ? (_) {} : _changeLocationMode,
-
-            ),
-
             const SizedBox(height: 10),
-
-            if (_useMapLocation)
-
-              _EditLocationButton(
-
-                text: _mapLocationLabel ?? '지도에서 위치를 선택해 주세요',
-
-                selected: _selectedLocationLatLng != null,
-
-                onTap: busy ? () {} : _pickLocation,
-
-              )
-
-            else ...[
-
-              _EditSelectBox(
-
-                value: _selectedRegion,
-
-                items: _regions,
-
-                enabled: !busy,
-
-                onChanged: (value) {
-
-                  setState(() {
-
-                    _selectedRegion = value;
-                    final districts =
-                        _districtsByRegion[value] ?? const <String>[];
-                    _selectedDistrict =
-                        districts.isNotEmpty ? districts.first : '';
-                    _locationChanged = true;
-
-                  });
-
-                },
-
-              ),
-
-              const SizedBox(height: 8),
-
-              _EditSelectBox(
-
-                value: _selectedDistrict,
-
-                items: _districtItems,
-
-                enabled: !busy,
-
-                onChanged: (value) {
-
-                  setState(() {
-
-                    _selectedDistrict = value;
-
-                    _locationChanged = true;
-
-                  });
-
-                },
-
-              ),
-
-            ],
+            _EditLocationButton(
+              text: _mapLocationLabel ?? '지도에서 위치를 선택해 주세요',
+              selected: _selectedLocationLatLng != null,
+              onTap: busy ? () {} : _pickLocation,
+            ),
 
             const SizedBox(height: 18),
 
@@ -1173,6 +1120,11 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
 
               child: FilledButton(
 
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF4263F5),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
                 onPressed: busy ? null : _save,
 
                 child: _isSaving
@@ -1397,7 +1349,7 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
 
         borderRadius: BorderRadius.circular(12),
 
-        borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+        borderSide: const BorderSide(color: Color(0xFFD3DEFF)),
 
       ),
 
@@ -1405,7 +1357,7 @@ class _FoundItemEditPageState extends State<FoundItemEditPage> {
 
         borderRadius: BorderRadius.circular(12),
 
-        borderSide: const BorderSide(color: Color(0xFF2563EB), width: 1.5),
+        borderSide: const BorderSide(color: Color(0xFF5271FF), width: 1.5),
 
       ),
 
@@ -2324,12 +2276,6 @@ class _FoundItemLocationEditPageState extends State<_FoundItemLocationEditPage> 
 
   ) {
 
-    if (address != null && address.trim().isNotEmpty) {
-
-      return address.trim();
-
-    }
-
     final regionText = [
 
       region.sido,
@@ -2340,7 +2286,8 @@ class _FoundItemLocationEditPageState extends State<_FoundItemLocationEditPage> 
 
     ].where((value) => value.trim().isNotEmpty).join(' ');
 
-    return regionText.isEmpty ? null : regionText;
+    if (regionText.isNotEmpty) return regionText;
+    return address?.trim().isNotEmpty == true ? address!.trim() : null;
 
   }
 

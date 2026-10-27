@@ -77,16 +77,24 @@ class _FoundItemManagePageState extends State<FoundItemManagePage> {
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          title: const Text('비밀번호 확인'),
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('비밀번호 확인', style: TextStyle(
+            color: Color(0xFF111827), fontSize: 19, fontWeight: FontWeight.w800,
+          )),
           content: TextField(
             autofocus: true,
             obscureText: true,
             keyboardType: TextInputType.visiblePassword,
             textInputAction: TextInputAction.done,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               labelText: '등록 비밀번호',
               hintText: '등록할 때 입력한 비밀번호',
-              border: OutlineInputBorder(),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: Color(0xFFD3DEFF))),
+              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: Color(0xFF4263F5), width: 1.5)),
             ),
             onChanged: (value) {
               enteredPassword = value;
@@ -101,6 +109,7 @@ class _FoundItemManagePageState extends State<FoundItemManagePage> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext),
+              style: TextButton.styleFrom(foregroundColor: const Color(0xFF6B7280)),
               child: const Text('취소'),
             ),
             FilledButton(
@@ -110,6 +119,11 @@ class _FoundItemManagePageState extends State<FoundItemManagePage> {
                   Navigator.pop(dialogContext, trimmed);
                 }
               },
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF4263F5),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
               child: const Text('확인'),
             ),
           ],
@@ -153,6 +167,8 @@ class _FoundItemManagePageState extends State<FoundItemManagePage> {
           context: context,
           builder: (dialogContext) {
             return AlertDialog(
+              backgroundColor: Colors.white,
+              surfaceTintColor: Colors.white,
               title: const Text('알림'),
               content: const Text('비밀번호가 틀렸습니다.'),
               actions: [

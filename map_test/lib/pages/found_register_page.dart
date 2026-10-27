@@ -605,7 +605,7 @@ class _ConfirmStep extends StatelessWidget {
                 SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'AI\uac00 \ubd84\ub958\ud55c \uacb0\uacfc\uc785\ub2c8\ub2e4.\\n\uc815\ubcf4\uac00 \ub9de\ub294\uc9c0 \ud655\uc778\ud558\uace0 \ud544\uc694\ud558\uba74 \uc218\uc815\ud574 \uc8fc\uc138\uc694.',
+                    'AI\uac00 \ubd84\ub958\ud55c \uacb0\uacfc\uc785\ub2c8\ub2e4.\n\uc815\ubcf4\uac00 \ub9de\ub294\uc9c0 \ud655\uc778\ud558\uace0 \ud544\uc694\ud558\uba74 \uc218\uc815\ud574 \uc8fc\uc138\uc694.',
                     style: TextStyle(
                       color: Color(0xFF3855F6),
                       fontSize: 12,
@@ -788,6 +788,19 @@ class _LocationStepState extends State<_LocationStep> {
   bool _isLoadingLocation = true;
   bool _isResolvingAddress = false;
   String? _locationMessage;
+  String _visibleRegion = '위치를 확인하는 중...';
+  int _addressRequestId = 0;
+
+  Future<void> _updateVisibleRegion(LatLng position) async {
+    final request = ++_addressRequestId;
+    final region = await _resolveRegion(position);
+    if (!mounted || request != _addressRequestId) return;
+    setState(() {
+      _visibleRegion = [region.sido, region.sigungu, region.eupmyeondong]
+          .where((part) => part.trim().isNotEmpty).join(' ');
+      if (_visibleRegion.isEmpty) _visibleRegion = '위치 정보를 확인할 수 없습니다';
+    });
+  }
 
   @override
   void initState() {
@@ -853,6 +866,7 @@ class _LocationStepState extends State<_LocationStep> {
         _isLoadingLocation = false;
       });
 
+      _updateVisibleRegion(widget.initialLocation ?? latLng);
       if (widget.initialLocation == null) {
         _mapController?.setCenter(latLng);
         _mapController?.setLevel(3);
@@ -878,6 +892,7 @@ class _LocationStepState extends State<_LocationStep> {
 
     _mapController?.setCenter(_currentLocation!);
     setState(() => _selectedCenter = _currentLocation!);
+    _updateVisibleRegion(_currentLocation!);
   }
 
   Future<void> _confirmLocation() async {
@@ -939,7 +954,8 @@ class _LocationStepState extends State<_LocationStep> {
       widget.onPickLocation(
         _LocationSelection(
           latLng: center,
-          label: label,
+          label: [region.sido, region.sigungu, region.eupmyeondong]
+              .where((part) => part.trim().isNotEmpty).join(' '),
           sido: region.sido,
           sigungu: region.sigungu,
           eupmyeondong: region.eupmyeondong,
@@ -1358,6 +1374,7 @@ class _LocationStepState extends State<_LocationStep> {
                 },
                 onCameraIdle: (latLng, _) {
                   setState(() => _selectedCenter = latLng);
+                  _updateVisibleRegion(latLng);
                 },
                 gestureRecognizers: {
                   Factory<OneSequenceGestureRecognizer>(
@@ -1414,7 +1431,7 @@ class _LocationStepState extends State<_LocationStep> {
               right: 20,
               bottom: 20,
               child: _MapSelectionPanel(
-                latLng: _selectedCenter!,
+                regionLabel: _visibleRegion,
                 isResolvingAddress: _isResolvingAddress,
                 onConfirm: _confirmLocation,
               ),
@@ -1585,12 +1602,12 @@ class _LocationLoadingMap extends StatelessWidget {
 
 class _MapSelectionPanel extends StatelessWidget {
   const _MapSelectionPanel({
-    required this.latLng,
+    required this.regionLabel,
     required this.isResolvingAddress,
     required this.onConfirm,
   });
 
-  final LatLng latLng;
+  final String regionLabel;
   final bool isResolvingAddress;
   final VoidCallback onConfirm;
 
@@ -1623,8 +1640,7 @@ class _MapSelectionPanel extends StatelessWidget {
           ),
           const SizedBox(height: 5),
           Text(
-            '${latLng.latitude.toStringAsFixed(6)}, '
-            '${latLng.longitude.toStringAsFixed(6)}',
+            regionLabel,
             style: const TextStyle(
               color: Color(0xFF111827),
               fontSize: 14,
@@ -1682,7 +1698,7 @@ class _CompleteStep extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             const Text(
-              '\uc2b5\ub4dd\ubb3c\uc774 \uc131\uacf5\uc801\uc73c\ub85c \ub4f1\ub85d\ub418\uc5c8\uc2b5\ub2c8\ub2e4.\\n\uac80\uc0c9 \uacb0\uacfc\uc5d0\uc11c \ud655\uc778\ud560 \uc218 \uc788\uc2b5\ub2c8\ub2e4.',
+              '\uc2b5\ub4dd\ubb3c\uc774 \uc131\uacf5\uc801\uc73c\ub85c \ub4f1\ub85d\ub418\uc5c8\uc2b5\ub2c8\ub2e4.\n\uac80\uc0c9 \uacb0\uacfc\uc5d0\uc11c \ud655\uc778\ud560 \uc218 \uc788\uc2b5\ub2c8\ub2e4.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: Color(0xFF6B7280),
