@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -788,18 +789,60 @@ class _LocationStepState extends State<_LocationStep> {
   bool _isLoadingLocation = true;
   bool _isResolvingAddress = false;
   String? _locationMessage;
-  String _visibleRegion = '위치를 확인하는 중...';
-  int _addressRequestId = 0;
+  // 수정·삭제 지도와 같은 주소 미리보기 상태/업데이트 흐름.
+  String? _selectedDisplayLabel;
+  bool _isPreviewResolving = false;
+  Timer? _previewDebounce;
+  int _previewRequestId = 0;
 
-  Future<void> _updateVisibleRegion(LatLng position) async {
-    final request = ++_addressRequestId;
-    final region = await _resolveRegion(position);
-    if (!mounted || request != _addressRequestId) return;
+  void _onCameraIdle(LatLng latLng) {
+    _previewDebounce?.cancel();
+    ++_previewRequestId;
     setState(() {
-      _visibleRegion = [region.sido, region.sigungu, region.eupmyeondong]
-          .where((part) => part.trim().isNotEmpty).join(' ');
-      if (_visibleRegion.isEmpty) _visibleRegion = '위치 정보를 확인할 수 없습니다';
+      _selectedCenter = latLng;
+      _isPreviewResolving = true;
+      _selectedDisplayLabel = null;
     });
+    _previewDebounce = Timer(const Duration(milliseconds: 350), () {
+      _updateSelectionPreview(latLng);
+    });
+  }
+
+  Future<void> _updateSelectionPreview(LatLng latLng) async {
+    if (!mounted) return;
+    final requestId = ++_previewRequestId;
+    setState(() => _isPreviewResolving = true);
+
+    // 수정·삭제의 _updateSelectionPreview와 동일한 병렬 주소조회.
+    final addressFuture = _resolveAddress(latLng);
+    final regionFuture = _resolveRegion(latLng);
+    final address = await addressFuture;
+    var region = await regionFuture;
+    if (region.sido.isEmpty || region.sigungu.isEmpty) {
+      region = _regionFromAddressLabel(address ?? '');
+    }
+
+    if (!mounted || requestId != _previewRequestId) return;
+    setState(() {
+      _selectedDisplayLabel = _bestLocationLabel(address, region);
+      _isPreviewResolving = false;
+    });
+  }
+
+  String? _bestLocationLabel(String? address, _RegionSelection region) {
+    final regionText = [region.sido, region.sigungu, region.eupmyeondong]
+        .where((part) => part.trim().isNotEmpty)
+        .join(' ');
+    if (regionText.isNotEmpty) return regionText;
+    final value = address?.trim() ?? '';
+    return value.isEmpty ? null : value;
+  }
+
+  @override
+  void dispose() {
+    _previewDebounce?.cancel();
+    ++_previewRequestId;
+    super.dispose();
   }
 
   @override
@@ -866,7 +909,9 @@ class _LocationStepState extends State<_LocationStep> {
         _isLoadingLocation = false;
       });
 
-      _updateVisibleRegion(widget.initialLocation ?? latLng);
+      if (_mapController != null) {
+        await _updateSelectionPreview(widget.initialLocation ?? latLng);
+      }
       if (widget.initialLocation == null) {
         _mapController?.setCenter(latLng);
         _mapController?.setLevel(3);
@@ -891,8 +936,7 @@ class _LocationStepState extends State<_LocationStep> {
     }
 
     _mapController?.setCenter(_currentLocation!);
-    setState(() => _selectedCenter = _currentLocation!);
-    _updateVisibleRegion(_currentLocation!);
+    await _updateSelectionPreview(_currentLocation!);
   }
 
   Future<void> _confirmLocation() async {
@@ -926,7 +970,7 @@ class _LocationStepState extends State<_LocationStep> {
       var region = await regionFuture;
 
       if (region.sido.isEmpty || region.sigungu.isEmpty) {
-        region = _regionFromAddressLabel(label);
+        region = _regionFromAddressLabel(label ?? '');
       }
 
       debugPrint(
@@ -1314,10 +1358,10 @@ class _LocationStepState extends State<_LocationStep> {
         last.endsWith('리');
   }
 
-  Future<String> _resolveAddress(LatLng latLng) async {
+  Future<String?> _resolveAddress(LatLng latLng) async {
     final controller = _mapController;
     if (controller == null) {
-      return _latLngLabel(latLng);
+      return null;
     }
 
     try {
@@ -1331,13 +1375,13 @@ class _LocationStepState extends State<_LocationStep> {
         final address = response.list.first;
         return address.roadAddress?.addressName ??
             address.address?.addressName ??
-            _latLngLabel(latLng);
+            null;
       }
     } catch (_) {
-      return _latLngLabel(latLng);
+      return null;
     }
 
-    return _latLngLabel(latLng);
+    return null;
   }
 
   String _latLngLabel(LatLng latLng) {
@@ -1371,11 +1415,9 @@ class _LocationStepState extends State<_LocationStep> {
                   _mapController = controller;
                   controller.setCenter(mapCenter);
                   controller.setLevel(3);
+                  _updateSelectionPreview(mapCenter);
                 },
-                onCameraIdle: (latLng, _) {
-                  setState(() => _selectedCenter = latLng);
-                  _updateVisibleRegion(latLng);
-                },
+                onCameraIdle: (latLng, _) => _onCameraIdle(latLng),
                 gestureRecognizers: {
                   Factory<OneSequenceGestureRecognizer>(
                     () => EagerGestureRecognizer(),
@@ -1431,7 +1473,8 @@ class _LocationStepState extends State<_LocationStep> {
               right: 20,
               bottom: 20,
               child: _MapSelectionPanel(
-                regionLabel: _visibleRegion,
+                regionLabel: _selectedDisplayLabel,
+                isPreviewResolving: _isPreviewResolving,
                 isResolvingAddress: _isResolvingAddress,
                 onConfirm: _confirmLocation,
               ),
@@ -1603,11 +1646,13 @@ class _LocationLoadingMap extends StatelessWidget {
 class _MapSelectionPanel extends StatelessWidget {
   const _MapSelectionPanel({
     required this.regionLabel,
+    required this.isPreviewResolving,
     required this.isResolvingAddress,
     required this.onConfirm,
   });
 
-  final String regionLabel;
+  final String? regionLabel;
+  final bool isPreviewResolving;
   final bool isResolvingAddress;
   final VoidCallback onConfirm;
 
@@ -1639,20 +1684,38 @@ class _MapSelectionPanel extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 5),
-          Text(
-            regionLabel,
-            style: const TextStyle(
-              color: Color(0xFF111827),
-              fontSize: 14,
-              fontWeight: FontWeight.w800,
-            ),
+          Row(
+            children: [
+              if (isPreviewResolving) ...[
+                const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                const SizedBox(width: 8),
+              ],
+              Expanded(
+                child: Text(
+                  isPreviewResolving
+                      ? '해당 지역을 확인하는 중입니다...'
+                      : (regionLabel ?? '주소를 확인하지 못했습니다.'),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF111827),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 12),
           _PrimaryButton(
             text: isResolvingAddress
                 ? '\uc704\uce58 \ud655\uc778 \uc911...'
                 : '\uc774 \uc704\uce58 \uc120\ud0dd',
-            enabled: !isResolvingAddress,
+            enabled: !isResolvingAddress && !isPreviewResolving && regionLabel != null,
             onTap: onConfirm,
           ),
         ],
