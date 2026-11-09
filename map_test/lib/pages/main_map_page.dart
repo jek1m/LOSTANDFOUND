@@ -1,20 +1,525 @@
+import 'dart:async';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:kakao_map_plugin/kakao_map_plugin.dart';
-
+import '../lost_models/lost_item.dart';
+import '../utils/current_position.dart';
+import '../utils/geohash_query.dart';
+import 'found_item_manage_page.dart';
 import 'found_register_page.dart';
+import 'lost_item_detail_page.dart';
 import 'lost_search_page.dart';
 
 class MainMapPage extends StatefulWidget {
   const MainMapPage({super.key});
-
   @override
   State<MainMapPage> createState() => _MainMapPageState();
 }
 
-class _MainMapPageState extends State<MainMapPage> {
-  KakaoMapController? mapController;
+class _ItemLocationGroup {
+  const _ItemLocationGroup({required this.location, required this.items});
+  final LatLng location;
+  final List<LostItem> items;
+}
 
-  final LatLng center = LatLng(37.5665, 126.9780); // 임시 중심 좌표
+class _MainMapPageState extends State<MainMapPage> {
+  static const int _mapSearchDisabledLevel = 9;
+  static const String _currentLocationMarkerId = '__current_location__';
+  static const double _mapControlWidth = 48;
+  static const String _currentLocationMarkerImage =
+      'data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20width=%2232%22%20height=%2240%22%20viewBox=%220%200%2032%2040%22%3E%3Cpath%20d=%22M16%201C7.72%201%201%207.72%201%2016c0%2010.8%2015%2023%2015%2023s15-12.2%2015-23C31%207.72%2024.28%201%2016%201z%22%20fill=%22%232563EB%22%20stroke=%22%231D4ED8%22%20stroke-width=%222%22/%3E%3Ccircle%20cx=%2216%22%20cy=%2216%22%20r=%226%22%20fill=%22%23DBEAFE%22/%3E%3C/svg%3E';
+  static const String _policeMarkerImage =
+      'data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20width=%2232%22%20height=%2240%22%20viewBox=%220%200%2032%2040%22%3E%3Cpath%20d=%22M16%201C7.72%201%201%207.72%201%2016c0%2010.8%2015%2023%2015%2023s15-12.2%2015-23C31%207.72%2024.28%201%2016%201z%22%20fill=%22%230F766E%22%20stroke=%22%23FFFFFF%22%20stroke-width=%222%22/%3E%3Ccircle%20cx=%2216%22%20cy=%2216%22%20r=%225%22%20fill=%22%23FFFFFF%22/%3E%3C/svg%3E';
+  static const String _appMarkerImage =
+      'data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20width=%2232%22%20height=%2240%22%20viewBox=%220%200%2032%2040%22%3E%3Cpath%20d=%22M16%201C7.72%201%201%207.72%201%2016c0%2010.8%2015%2023%2015%2023s15-12.2%2015-23C31%207.72%2024.28%201%2016%201z%22%20fill=%22%23F97316%22%20stroke=%22%23FFFFFF%22%20stroke-width=%222%22/%3E%3Ccircle%20cx=%2216%22%20cy=%2216%22%20r=%225%22%20fill=%22%23FFFFFF%22/%3E%3C/svg%3E';
+  KakaoMapController? _mapController;
+  LatLng? _currentLocation;
+  bool _isLoadingLocation = true;
+  bool _isLoadingItems = false;
+  bool _hasStartedInitialSearch = false;
+  bool _mapNeedsSearch = false;
+  String? _locationMessage;
+  String? _itemsMessage;
+  List<LostItem> _nearbyItems = const [];
+  int _nearbyRequestId = 0;
+  int _mapInstanceId = 0;
+  Timer? _viewportDebounce;
+  final LatLng _fallbackCenter = LatLng(37.5665, 126.9780);
+  @override
+  void initState() {
+    super.initState();
+    _loadCurrentLocation();
+  }
+
+  Future<void> _loadCurrentLocation() async {
+    if (mounted) {
+      setState(() {
+        _isLoadingLocation = true;
+        _locationMessage = null;
+      });
+    }
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) {
+        _setLocationFailure('위치 서비스가 꺼져 있습니다. 기기 위치를 켜주세요.');
+        return;
+      }
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied) {
+        _setLocationFailure('주변 습득물을 보려면 위치 권한을 허용해 주세요.');
+        return;
+      }
+      if (permission == LocationPermission.deniedForever) {
+        _setLocationFailure('앱 설정에서 위치 권한을 허용해 주세요.');
+        return;
+      }
+      final position = await getReliableCurrentPosition();
+      final location = LatLng(position.latitude, position.longitude);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _currentLocation = location;
+        _isLoadingLocation = false;
+        _locationMessage = null;
+      });
+      _moveToCurrentLocation();
+    } catch (_) {
+      _setLocationFailure('현재 위치를 가져오지 못했습니다. 다시 시도해 주세요.');
+    }
+  }
+
+  void _setLocationFailure(String message) {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _isLoadingLocation = false;
+      _locationMessage = message;
+    });
+    _scheduleInitialSearch();
+  }
+
+  void _moveToCurrentLocation() {
+    final location = _currentLocation;
+    if (location == null) {
+      _loadCurrentLocation();
+      return;
+    }
+    if (_mapController != null) {
+      _onViewportChanging();
+      _mapController!.setCenter(location);
+    }
+    _scheduleInitialSearch();
+  }
+
+  Future<void> _restoreMapAfterNavigation() async {
+    if (!mounted) {
+      return;
+    }
+    // KakaoMap의 웹뷰 컨트롤러는 다른 페이지를 다녀온 뒤 유효하지 않을 수 있다.
+    // 새 지도 인스턴스를 만들고, 위치와 마커 데이터를 다시 적용한다.
+    _viewportDebounce?.cancel();
+    _nearbyRequestId++;
+    setState(() {
+      _mapController = null;
+      _mapInstanceId++;
+      _isLoadingItems = false;
+      _mapNeedsSearch = _hasStartedInitialSearch;
+    });
+    await _loadCurrentLocation();
+  }
+
+  Future<void> _zoomIn() async {
+    final controller = _mapController;
+    if (controller == null) {
+      return;
+    }
+    final level = await controller.getLevel();
+    if (level > 1) {
+      _onViewportChanging();
+      controller.setLevel(level - 1);
+    }
+  }
+
+  Future<void> _zoomOut() async {
+    final controller = _mapController;
+    if (controller == null) {
+      return;
+    }
+    final level = await controller.getLevel();
+    if (level < 14) {
+      _onViewportChanging();
+      controller.setLevel(level + 1);
+    }
+  }
+
+  void _onViewportChanging() {
+    _viewportDebounce?.cancel();
+    if (!mounted) {
+      return;
+    }
+    if (!_hasStartedInitialSearch ||
+        (_mapNeedsSearch && !_isLoadingItems && _itemsMessage == null)) {
+      return;
+    }
+    // get() 요청은 취소할 수 없으므로 결과와 오류를 모두 무효화한다.
+    // 이동 중 반복 이벤트에는 다시 빌드하지 않는다.
+    _nearbyRequestId++;
+    setState(() {
+      _isLoadingItems = false;
+      _mapNeedsSearch = true;
+      _itemsMessage = null;
+    });
+  }
+
+  void _onCameraIdle() {
+    if (mounted && !_hasStartedInitialSearch) {
+      _scheduleInitialSearch();
+    }
+  }
+
+  void _scheduleInitialSearch() {
+    _viewportDebounce?.cancel();
+    if (_hasStartedInitialSearch ||
+        _isLoadingLocation ||
+        _mapController == null) {
+      return;
+    }
+    // 위치 확인과 지도 생성 순서에 관계없이 최초 조회는 한 번만 실행한다.
+    _viewportDebounce = Timer(const Duration(milliseconds: 400), () {
+      if (mounted && !_hasStartedInitialSearch) {
+        _refreshVisibleItems();
+      }
+    });
+  }
+
+  void _showZoomInMessage() {
+    if (!mounted) {
+      return;
+    }
+    // 이미 실행 중인 더 넓은 영역의 조회 결과가 뒤늦게 반영되지 않게 한다.
+    _nearbyRequestId++;
+    _mapController?.clearMarker();
+    setState(() {
+      _nearbyItems = const [];
+      _isLoadingItems = false;
+      _itemsMessage =
+          '검색 범위가 너무 넓습니다. 지도를 확대한 뒤 '
+          '현 지도에서 재검색을 눌러 주세요.';
+    });
+  }
+
+  Future<void> _refreshVisibleItems() async {
+    final controller = _mapController;
+    if (!mounted ||
+        controller == null ||
+        _isLoadingItems ||
+        _isLoadingLocation) {
+      return;
+    }
+    _viewportDebounce?.cancel();
+    final requestId = ++_nearbyRequestId;
+    setState(() {
+      _hasStartedInitialSearch = true;
+      _mapNeedsSearch = false;
+      _isLoadingItems = true;
+      _itemsMessage = null;
+    });
+    try {
+      final level = await controller.getLevel().timeout(
+        const Duration(seconds: 10),
+      );
+      if (!mounted || requestId != _nearbyRequestId) {
+        return;
+      }
+      if (level >= _mapSearchDisabledLevel) {
+        _showZoomInMessage();
+        return;
+      }
+      final bounds = await controller.getBounds().timeout(
+        const Duration(seconds: 10),
+      );
+      if (!mounted || requestId != _nearbyRequestId) {
+        return;
+      }
+      await _loadVisibleItems(bounds, requestId);
+    } catch (_) {
+      _setItemsFailure(requestId, '지도 범위를 확인하지 못했습니다. 다시 검색해 주세요.');
+    }
+  }
+
+  Future<void> _loadVisibleItems(LatLngBounds bounds, int requestId) async {
+    try {
+      final southWest = bounds.getSouthWest();
+      final northEast = bounds.getNorthEast();
+      final centerLatitude = (southWest.latitude + northEast.latitude) / 2;
+      final centerLongitude = (southWest.longitude + northEast.longitude) / 2;
+      final radiusMeters = Geolocator.distanceBetween(
+        centerLatitude,
+        centerLongitude,
+        northEast.latitude,
+        northEast.longitude,
+      );
+      final ranges = geohashQueryRanges(
+        latitude: centerLatitude,
+        longitude: centerLongitude,
+        radiusMeters: radiusMeters,
+      );
+      final snapshots = await Future.wait(
+        ranges.map(
+          (range) => FirebaseFirestore.instance
+              .collection('found_items')
+              .orderBy('geohash')
+              .startAt([range.start])
+              .endBefore([range.end])
+              .get(),
+        ),
+      ).timeout(const Duration(seconds: 20));
+      // 취소된 조회는 문서 변환과 정렬도 수행하지 않는다.
+      if (!mounted || requestId != _nearbyRequestId) {
+        return;
+      }
+      final documents = <String, QueryDocumentSnapshot<Map<String, dynamic>>>{
+        for (final snapshot in snapshots)
+          for (final document in snapshot.docs) document.id: document,
+      };
+      final items =
+          documents.values
+              .map(LostItem.fromDoc)
+              .where((item) => _isWithinBounds(item, bounds))
+              .toList(growable: false)
+            ..sort((a, b) {
+              final aDate = a.fdYmd ?? DateTime.fromMillisecondsSinceEpoch(0);
+              final bDate = b.fdYmd ?? DateTime.fromMillisecondsSinceEpoch(0);
+              final dateComparison = bDate.compareTo(aDate);
+              if (dateComparison != 0) {
+                return dateComparison;
+              }
+              return b.atcId.compareTo(a.atcId);
+            });
+
+      if (!mounted || requestId != _nearbyRequestId) {
+        return;
+      }
+      // 플러그인은 빈 마커 목록으로 갱신될 때 이전 마커를 자동 제거하지 않는다.
+      _mapController?.clearMarker();
+      setState(() {
+        _nearbyItems = items;
+        _isLoadingItems = false;
+        _itemsMessage = null;
+      });
+    } on TimeoutException {
+      _setItemsFailure(requestId, '조회 시간이 길어지고 있습니다. 다시 검색해 주세요.');
+    } on FirebaseException catch (error) {
+      _setItemsFailure(
+        requestId,
+        error.code == 'failed-precondition'
+            ? '주변 조회에 필요한 Firestore 인덱스를 확인해 주세요.'
+            : '주변 습득물을 불러오지 못했습니다.',
+      );
+    } catch (_) {
+      _setItemsFailure(requestId, '주변 습득물을 불러오지 못했습니다.');
+    }
+  }
+
+  void _setItemsFailure(int requestId, String message) {
+    if (!mounted || requestId != _nearbyRequestId) {
+      return;
+    }
+    setState(() {
+      _isLoadingItems = false;
+      _itemsMessage = message;
+    });
+  }
+
+  Future<DetectedSearchRegion?> _detectSearchRegionWithKakaoMap({
+    required bool requestPermission,
+  }) async {
+    final controller = _mapController;
+    final location = _currentLocation;
+    if (controller == null || location == null) {
+      return null;
+    }
+    final response = await controller
+        .coord2RegionCode(
+          Coord2RegionCodeRequest(x: location.longitude, y: location.latitude),
+        )
+        .timeout(const Duration(seconds: 10));
+    if (response.list.isEmpty) {
+      return null;
+    }
+    final administrative = response.list.where(
+      (result) => result.regionType == 'H',
+    );
+    final result = administrative.isNotEmpty
+        ? administrative.first
+        : response.list.first;
+    final region = _normalizeSearchRegion(result.region1DepthName);
+    if (region == null) {
+      return null;
+    }
+    final subregion = region == '세종특별자치시'
+        ? result.region3DepthName
+        : result.region2DepthName;
+    return DetectedSearchRegion(
+      region: region,
+      subregion: (subregion?.trim().isEmpty ?? true) ? null : subregion!.trim(),
+    );
+  }
+
+  String? _normalizeSearchRegion(String? value) {
+    final region = value?.trim();
+    if (region == null || region.isEmpty) {
+      return null;
+    }
+    const aliases = {'강원특별자치도': '강원도', '전라북도': '전북특별자치도'};
+    return aliases[region] ?? region;
+  }
+
+  Marker? _currentLocationMarker() {
+    final location = _currentLocation;
+    if (location == null) {
+      return null;
+    }
+    return Marker(
+      markerId: _currentLocationMarkerId,
+      latLng: location,
+      width: 32,
+      height: 40,
+      markerImageSrc: _currentLocationMarkerImage,
+      zIndex: 100,
+    );
+  }
+
+  List<Marker> _markersFromItems(List<LostItem> items) {
+    final groups = _itemLocationGroups(items);
+    return groups
+        .asMap()
+        .entries
+        .map(
+          (entry) => Marker(
+            markerId: '__lost_location_${entry.key}',
+            latLng: entry.value.location,
+            width: 32,
+            height: 40,
+            markerImageSrc: entry.value.items.first.isAppRegistered
+                ? _appMarkerImage
+                : _policeMarkerImage,
+            zIndex: 50,
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  List<_ItemLocationGroup> _itemLocationGroups(List<LostItem> items) {
+    final groupedItems = <String, List<LostItem>>{};
+    for (final item in items) {
+      final key =
+          '${item.latitude!.toStringAsFixed(6)},'
+          '${item.longitude!.toStringAsFixed(6)}';
+      groupedItems.putIfAbsent(key, () => []).add(item);
+    }
+    return groupedItems.values
+        .map(
+          (group) => _ItemLocationGroup(
+            location: LatLng(group.first.latitude!, group.first.longitude!),
+            items: group,
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  void _openItemLocationGroup(List<LostItem> items, String markerId) {
+    const markerPrefix = '__lost_location_';
+    if (!markerId.startsWith(markerPrefix)) {
+      return;
+    }
+    final index = int.tryParse(markerId.substring(markerPrefix.length));
+    final groups = _itemLocationGroups(items);
+    if (index == null || index < 0 || index >= groups.length) {
+      return;
+    }
+    final group = groups[index];
+    if (group.items.length == 1) {
+      _openItemDetail(group.items.first);
+      return;
+    }
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: ListView.builder(
+          shrinkWrap: true,
+          itemCount: group.items.length + 1,
+          itemBuilder: (context, itemIndex) {
+            if (itemIndex == 0) {
+              return ListTile(
+                title: Text('이 위치에 표시 중인 습득물 ${group.items.length}개'),
+              );
+            }
+            final item = group.items[itemIndex - 1];
+            return ListTile(
+              title: Text(item.fdPrdtNm),
+              subtitle: Text(item.fndPlace ?? ''),
+              onTap: () {
+                Navigator.pop(context);
+                _openItemDetail(item);
+              },
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  void _openItemDetail(LostItem item) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => LostItemDetailPage(item: item)),
+    );
+  }
+
+  bool _hasValidLocation(LostItem item) {
+    final latitude = item.latitude;
+    final longitude = item.longitude;
+    return latitude != null &&
+        longitude != null &&
+        latitude >= -90 &&
+        latitude <= 90 &&
+        longitude >= -180 &&
+        longitude <= 180;
+  }
+
+  bool _isWithinBounds(LostItem item, LatLngBounds bounds) {
+    if (!_hasValidLocation(item)) {
+      return false;
+    }
+    final southWest = bounds.getSouthWest();
+    final northEast = bounds.getNorthEast();
+    return item.latitude! >= southWest.latitude &&
+        item.latitude! <= northEast.latitude &&
+        item.longitude! >= southWest.longitude &&
+        item.longitude! <= northEast.longitude;
+  }
+
+  Future<void> _openManageItems() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const FoundItemManagePage()),
+    );
+    if (!mounted) {
+      return;
+    }
+    await _restoreMapAfterNavigation();
+  }
+
+  @override
+  void dispose() {
+    _viewportDebounce?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -33,114 +538,193 @@ class _MainMapPageState extends State<MainMapPage> {
                   bottom: BorderSide(color: Color(0xFFE9EEF5), width: 1),
                 ),
               ),
-              child: const Column(
+              child: Stack(
+                alignment: Alignment.center,
                 children: [
-                  Text(
-                    '앱이름',
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w800,
-                      color: Color(0xFF1F2937),
-                    ),
+                  const Column(
+                    children: [
+                      Text(
+                        '찾아드림',
+                        style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF1F2937),
+                        ),
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        '잃어버린 물건을 찾아드립니다',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF6B7280),
+                        ),
+                      ),
+                    ],
                   ),
-                  SizedBox(height: 4),
-                  Text(
-                    '잃어버린 물건을 찾아드립니다',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Color(0xFF6B7280),
-                    ),
-                  ),
+
                 ],
               ),
             ),
-
             // 지도 영역
             Expanded(
               child: Stack(
                 children: [
                   // 실제 카카오맵
-                  SizedBox(
-                    width: double.infinity,
-                    height: double.infinity,
+                  Positioned.fill(
                     child: KakaoMap(
-                      center: center,
-                      onMapCreated: (controller) {
-                        mapController = controller;
-                      },
-                    ),
-                  ),
-
-                  // 기능 연결 전 임시 마커 UI
-                  const IgnorePointer(
-                    child: Stack(
-                      children: [
-                        MapPin(top: 85, left: 135, color: Color(0xFFEF4444)),
-                        MapPin(top: 120, left: 78, color: Color(0xFF14B8A6)),
-                        MapPin(top: 140, right: 105, color: Color(0xFFFF7A00)),
-                        MapPin(top: 180, left: 110, color: Color(0xFFFF9800)),
-                        MapPin(top: 205, right: 145, color: Color(0xFF374151)),
-                        MapPin(top: 240, left: 155, color: Color(0xFFFB7185)),
-                        MapPin(top: 260, right: 100, color: Color(0xFF8B5CF6)),
-                        MapPin(top: 315, left: 95, color: Color(0xFF10B981)),
-                        MapPin(top: 350, right: 80, color: Color(0xFF06B6D4)),
-                        MapPin(bottom: 135, left: 135, color: Color(0xFFE91E63)),
-                        MapPin(bottom: 90, right: 120, color: Color(0xFF9CA3AF)),
+                      key: ValueKey('main-kakao-map-$_mapInstanceId'),
+                      center: _currentLocation ?? _fallbackCenter,
+                      markers: [
+                        ?_currentLocationMarker(),
+                        ..._markersFromItems(_nearbyItems),
                       ],
+                      onMapCreated: (controller) {
+                        _mapController = controller;
+                        if (_currentLocation != null) {
+                          _moveToCurrentLocation();
+                        }
+                        setState(() {});
+                        _scheduleInitialSearch();
+                      },
+                      onMarkerTap: (markerId, _, _) {
+                        _openItemLocationGroup(_nearbyItems, markerId);
+                      },
+                      onCameraIdle: (_, _) => _onCameraIdle(),
+                      onDragChangeCallback: (_, _, type) {
+                        if (type != DragType.end) {
+                          _onViewportChanging();
+                        }
+                      },
+                      onZoomChangeCallback: (_, type) {
+                        if (type == ZoomType.start) {
+                          _onViewportChanging();
+                        }
+                      },
+                      onCenterChangeCallback: (_, _) => _onViewportChanging(),
                     ),
                   ),
-
-                  // 현재 위치 표시
-                  Center(
+                  Positioned(
+                    top: 12,
+                    left: 16,
+                    right: 16,
                     child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Container(
-                          width: 28,
-                          height: 28,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF2563EB),
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white, width: 4),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.18),
-                                blurRadius: 8,
-                                offset: const Offset(0, 3),
-                              ),
-                            ],
-                          ),
+                        Row(
+                          children: [
+                            Expanded(child: _locationStatusCard()),
+                            const SizedBox(width: 8),
+                            MainBottomButton(
+                              text: '수정/삭제',
+                              icon: Icons.edit_outlined,
+                              colors: const [Color(0xFF2563EB), Color(0xFF1D4ED8)],
+                              onTap: _openManageItems,
+                              compact: true,
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 4),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(20),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.15),
-                                blurRadius: 8,
-                                offset: const Offset(0, 3),
+                        const SizedBox(height: 10),
+                        Center(
+                          child: ElevatedButton.icon(
+                            onPressed: _mapController == null ||
+                                    _isLoadingLocation || _isLoadingItems
+                                ? null
+                                : _refreshVisibleItems,
+                            icon: _isLoadingItems
+                                ? const SizedBox.square(
+                                    dimension: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Color(0xFF2563EB),
+                                    ),
+                                  )
+                                : const Icon(Icons.refresh_rounded, size: 21),
+                            label: Text(
+                              _isLoadingItems ? '조회 중…' : '현 지도에서 재검색',
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.white,
+                              foregroundColor: const Color(0xFF2563EB),
+                              disabledBackgroundColor: Colors.white,
+                              disabledForegroundColor: const Color(0xFF8B959E),
+                              surfaceTintColor: Colors.transparent,
+                              elevation: 4,
+                              shadowColor: const Color(0x33000000),
+                              minimumSize: const Size(0, 44),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 20, vertical: 11,
                               ),
-                            ],
-                          ),
-                          child: const Text(
-                            '내 위치',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF374151),
+                              shape: const StadiumBorder(),
+                              side: const BorderSide(color: Color(0xFFE5E7EB)),
+                              textStyle: const TextStyle(
+                                fontSize: 14, fontWeight: FontWeight.w700,
+                              ),
                             ),
                           ),
                         ),
                       ],
                     ),
                   ),
-
+                  Positioned(
+                    right: 18,
+                    bottom: 92,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Material(
+                          color: Colors.white,
+                          elevation: 3,
+                          borderRadius: BorderRadius.circular(12),
+                          clipBehavior: Clip.antiAlias,
+                          child: SizedBox(
+                            width: _mapControlWidth,
+                            child: Column(
+                              children: [
+                                IconButton(
+                                  onPressed: _zoomIn,
+                                  tooltip: '확대',
+                                  icon: const Icon(Icons.add),
+                                ),
+                                const SizedBox(
+                                  width: 28,
+                                  child: Divider(height: 1),
+                                ),
+                                IconButton(
+                                  onPressed: _zoomOut,
+                                  tooltip: '축소',
+                                  icon: const Icon(Icons.remove),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        SizedBox.square(
+                          dimension: _mapControlWidth,
+                          child: FloatingActionButton(
+                            heroTag: 'move_to_current_location',
+                            onPressed:
+                                _isLoadingLocation || _currentLocation == null
+                                ? null
+                                : _moveToCurrentLocation,
+                            backgroundColor: Colors.white,
+                            foregroundColor: const Color(0xFF2563EB),
+                            tooltip: '내 위치로 이동',
+                            child: _isLoadingLocation
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.my_location),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                   // 하단 버튼 영역
                   Positioned(
                     left: 20,
@@ -156,13 +740,20 @@ class _MainMapPageState extends State<MainMapPage> {
                               Color(0xFFB000F5),
                               Color(0xFF7C3AED),
                             ],
-                            onTap: () {
-                              Navigator.push(
+                            onTap: () async {
+                              await Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                  builder: (context) => const LostSearchPage(),
+                                  builder: (context) => LostSearchPage(
+                                    regionDetector:
+                                        _detectSearchRegionWithKakaoMap,
+                                  ),
                                 ),
                               );
+                              if (!mounted) {
+                                return;
+                              }
+                              await _restoreMapAfterNavigation();
                             },
                           ),
                         ),
@@ -175,13 +766,15 @@ class _MainMapPageState extends State<MainMapPage> {
                               Color(0xFF2563EB),
                               Color(0xFF1D4ED8),
                             ],
-                            onTap: () {
-                              Navigator.push(
+                            onTap: () async {
+                              await Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                  builder: (context) => const FoundRegisterPage(),
+                                  builder: (context) =>
+                                      const FoundRegisterPage(),
                                 ),
                               );
+                              await _restoreMapAfterNavigation();
                             },
                           ),
                         ),
@@ -196,43 +789,83 @@ class _MainMapPageState extends State<MainMapPage> {
       ),
     );
   }
-}
 
-// 지도 위 임시 위치 마커
-class MapPin extends StatelessWidget {
-  final double? top;
-  final double? left;
-  final double? right;
-  final double? bottom;
-  final Color color;
+  Widget _locationStatusCard() {
+    final resultCountLabel = '${_nearbyItems.length}개';
+    if (_isLoadingLocation) {
+      return _mapStatusCard(
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            SizedBox(width: 10),
+            Text('현재 위치를 확인하고 있습니다.'),
+          ],
+        ),
+      );
+    }
+    final message = _locationMessage;
+    if (message != null) {
+      return _mapStatusCard(
+        child: Row(
+          children: [
+            const Icon(Icons.location_off_outlined, color: Color(0xFFDC2626)),
+            const SizedBox(width: 8),
+            Expanded(child: Text(message)),
+            TextButton(
+              onPressed: _loadCurrentLocation,
+              child: const Text('재시도'),
+            ),
+          ],
+        ),
+      );
+    }
+    final itemsMessage = _itemsMessage;
+    if (itemsMessage != null) {
+      return _mapStatusCard(
+        child: Row(
+          children: [
+            const Icon(Icons.cloud_off_outlined, color: Color(0xFFDC2626)),
+            const SizedBox(width: 8),
+            Expanded(child: Text(itemsMessage)),
+          ],
+        ),
+      );
+    }
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: _mapStatusCard(
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.map_outlined, size: 18, color: Color(0xFF2563EB)),
+            const SizedBox(width: 7),
+            Flexible(
+              child: Text(
+                _isLoadingItems
+                    ? '선택한 지도 영역을 조회하고 있습니다.'
+                    : '검색 결과 · $resultCountLabel',
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
-  const MapPin({
-    super.key,
-    this.top,
-    this.left,
-    this.right,
-    this.bottom,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Positioned(
-      top: top,
-      left: left,
-      right: right,
-      bottom: bottom,
-      child: Icon(
-        Icons.location_on,
-        size: 38,
-        color: color,
-        shadows: [
-          Shadow(
-            color: Colors.black.withOpacity(0.18),
-            blurRadius: 5,
-            offset: const Offset(0, 2),
-          ),
-        ],
+  Widget _mapStatusCard({required Widget child}) {
+    return Material(
+      color: Colors.white,
+      elevation: 3,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: child,
       ),
     );
   }
@@ -244,26 +877,26 @@ class MainBottomButton extends StatelessWidget {
   final IconData icon;
   final List<Color> colors;
   final VoidCallback onTap;
-
+  final bool compact;
   const MainBottomButton({
     super.key,
     required this.text,
     required this.icon,
     required this.colors,
     required this.onTap,
+    this.compact = false,
   });
-
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 56,
+      height: compact ? 40 : 56,
       child: DecoratedBox(
         decoration: BoxDecoration(
           gradient: LinearGradient(colors: colors),
           borderRadius: BorderRadius.circular(14),
           boxShadow: [
             BoxShadow(
-              color: colors.last.withOpacity(0.35),
+              color: colors.last.withValues(alpha: 0.35),
               blurRadius: 12,
               offset: const Offset(0, 5),
             ),
@@ -274,20 +907,24 @@ class MainBottomButton extends StatelessWidget {
           child: InkWell(
             borderRadius: BorderRadius.circular(14),
             onTap: onTap,
-            child: Row(
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: compact ? 10 : 0),
+              child: Row(
+              mainAxisSize: compact ? MainAxisSize.min : MainAxisSize.max,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(icon, color: Colors.white, size: 22),
+                Icon(icon, color: Colors.white, size: compact ? 17 : 22),
                 const SizedBox(width: 8),
                 Text(
                   text,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: Colors.white,
-                    fontSize: 15,
+                    fontSize: compact ? 12 : 15,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
               ],
+              ),
             ),
           ),
         ),

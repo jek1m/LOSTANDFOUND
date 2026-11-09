@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:kakao_map_plugin/kakao_map_plugin.dart';
@@ -60,8 +62,7 @@ class FoundRegisterPage extends StatefulWidget {
 }
 
 class _FoundRegisterPageState extends State<FoundRegisterPage> {
-  FoundItemAiService get _aiService =>
-    widget.aiService ?? FoundItemAiService();
+  FoundItemAiService get _aiService => widget.aiService ?? FoundItemAiService();
   final _imagePicker = ImagePicker();
   final _itemNameController = TextEditingController(
     text: '\uac80\uc815 \uac00\ubc29',
@@ -91,36 +92,9 @@ class _FoundRegisterPageState extends State<FoundRegisterPage> {
     '\ud734\ub300\ud3f0',
     '\uae30\ud0c0\ubb3c\ud488',
   ];
-  final List<String> _regions = const [
-    '\uc11c\uc6b8',
-    '\uacbd\uae30',
-    '\uc778\ucc9c',
-    '\uac15\uc6d0',
-    '\ucda9\ubd81',
-    '\ucda9\ub0a8',
-    '\uc804\ubd81',
-    '\uc804\ub0a8',
-    '\uacbd\ubd81',
-  ];
-  final List<String> _districts = const [
-    '\uac15\ub0a8\uad6c',
-    '\uac15\ub3d9\uad6c',
-    '\uac15\ubd81\uad6c',
-    '\uac15\uc11c\uad6c',
-    '\uad00\uc545\uad6c',
-    '\uad11\uc9c4\uad6c',
-    '\uad6c\ub85c\uad6c',
-    '\ub9c8\ud3ec\uad6c',
-    '\uc11c\ucd08\uad6c',
-    '\uc1a1\ud30c\uad6c',
-  ];
-
   _RegisterStep _step = _RegisterStep.photo;
   String _selectedCategory = '\uac00\ubc29';
-  String _selectedRegion = '\uc11c\uc6b8';
-  String _selectedDistrict = '\uac15\ub0a8\uad6c';
   DateTime _foundDate = DateTime.now();
-  bool _useMapLocation = true;
   bool _isSubmitting = false;
   String? _mapLocation;
   LatLng? _selectedLocationLatLng;
@@ -142,11 +116,9 @@ class _FoundRegisterPageState extends State<FoundRegisterPage> {
     final image = _selectedImage;
 
     if (image == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('사진을 먼저 등록해 주세요.'),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('사진을 먼저 등록해 주세요.')));
       return;
     }
 
@@ -171,7 +143,7 @@ class _FoundRegisterPageState extends State<FoundRegisterPage> {
         }
 
         if (result.description.trim().isNotEmpty) {
-         _descriptionController.text = result.description.trim();
+          _descriptionController.text = result.description.trim();
         }
 
         _step = _RegisterStep.confirm;
@@ -183,11 +155,9 @@ class _FoundRegisterPageState extends State<FoundRegisterPage> {
 
       setState(() => _step = _RegisterStep.photo);
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('AI 분석 중 오류가 발생했습니다: $e'),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('AI 분석 중 오류가 발생했습니다: $e')));
     }
   }
 
@@ -228,28 +198,47 @@ class _FoundRegisterPageState extends State<FoundRegisterPage> {
     FocusScope.of(context).unfocus();
     setState(() => _isSubmitting = true);
 
-    final foundPlace = _useMapLocation
-        ? (_mapLocation ?? '지도에서 선택한 위치')
-        : '${_normalizeSido(_selectedRegion)} $_selectedDistrict';
-
-    final item = FoundItemRegistration(
-      itemName: _itemNameController.text.trim(),
-      category: _selectedCategory,
-      foundAt: _foundDate,
-      foundPlace: foundPlace,
-      description: _descriptionController.text.trim(),
-      contact: _contactController.text.trim(),
-      password: _passwordController.text.trim(),
-      latitude: _selectedLocationLatLng?.latitude,
-      longitude: _selectedLocationLatLng?.longitude,
-      sido: _useMapLocation
-          ? _sido
-          : _normalizeSido(_selectedRegion),
-      sigungu: _useMapLocation ? _sigungu : _selectedDistrict,
-      eupmyeondong: _useMapLocation ? _eupmyeondong : '',
-    );
-
     try {
+      final selectedLocation = _selectedLocationLatLng;
+      if (selectedLocation == null) {
+        throw StateError('지도에서 습득 위치를 선택해 주세요.');
+      }
+
+      if (_sido.trim().isEmpty || _sigungu.trim().isEmpty) {
+        throw StateError(
+          '선택한 지도 위치의 지역 정보를 확인하지 못했습니다. '
+          '지도를 다시 열어 위치를 다시 선택해 주세요.',
+        );
+      }
+
+      final sido = _sido.trim();
+      final sigungu = _sigungu.trim();
+      final latitude = selectedLocation.latitude;
+      final longitude = selectedLocation.longitude;
+      final eupmyeondong = _eupmyeondong.trim();
+      final foundPlace = '$sido $sigungu';
+
+      debugPrint(
+        '최종 등록 위치: '
+        'sido=$sido, sigungu=$sigungu, eupmyeondong=$eupmyeondong, '
+        'lat=$latitude, lon=$longitude, foundPlace=$foundPlace',
+      );
+
+      final item = FoundItemRegistration(
+        itemName: _itemNameController.text.trim(),
+        category: _selectedCategory,
+        foundAt: _foundDate,
+        foundPlace: foundPlace,
+        description: _descriptionController.text.trim(),
+        contact: _contactController.text.trim(),
+        password: _passwordController.text.trim(),
+        latitude: latitude,
+        longitude: longitude,
+        sido: sido,
+        sigungu: sigungu,
+        eupmyeondong: eupmyeondong,
+      );
+
       final atcId = await widget.repository.registerFoundItem(
         item,
         image: _selectedImage,
@@ -268,11 +257,9 @@ class _FoundRegisterPageState extends State<FoundRegisterPage> {
         return;
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('등록 중 문제가 발생했습니다: $e'),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('등록 중 문제가 발생했습니다: $e')));
     } finally {
       if (mounted) {
         setState(() => _isSubmitting = false);
@@ -280,27 +267,10 @@ class _FoundRegisterPageState extends State<FoundRegisterPage> {
     }
   }
 
-  String _normalizeSido(String value) {
-    const sidoMap = {
-      '서울': '서울특별시',
-      '경기': '경기도',
-      '인천': '인천광역시',
-      '강원': '강원특별자치도',
-      '충북': '충청북도',
-      '충남': '충청남도',
-      '전북': '전북특별자치도',
-      '전남': '전라남도',
-      '경북': '경상북도',
-    };
-
-    return sidoMap[value] ?? value;
-  }
-
   bool get _canSubmit {
-    final hasLocation = _useMapLocation
-        ? _mapLocation != null
-        : _selectedRegion.isNotEmpty && _selectedDistrict.isNotEmpty;
-    return hasLocation &&
+    return _selectedLocationLatLng != null &&
+        _sido.trim().isNotEmpty &&
+        _sigungu.trim().isNotEmpty &&
         _passwordController.text.trim().isNotEmpty &&
         _contactController.text.trim().isNotEmpty;
   }
@@ -351,12 +321,7 @@ class _FoundRegisterPageState extends State<FoundRegisterPage> {
             _RegisterStep.detail => _DetailStep(
               key: const ValueKey('detail'),
               foundDateText: _dateLabel(_foundDate),
-              useMapLocation: _useMapLocation,
               mapLocation: _mapLocation,
-              selectedRegion: _selectedRegion,
-              selectedDistrict: _selectedDistrict,
-              regions: _regions,
-              districts: _districts,
               passwordController: _passwordController,
               contactController: _contactController,
               descriptionController: _descriptionController,
@@ -365,16 +330,7 @@ class _FoundRegisterPageState extends State<FoundRegisterPage> {
               onBack: () => setState(() => _step = _RegisterStep.confirm),
               onClose: _close,
               onPickDate: _pickDate,
-              onUseMapChanged: (value) {
-                setState(() => _useMapLocation = value);
-              },
               onOpenMap: () => setState(() => _step = _RegisterStep.location),
-              onRegionChanged: (value) {
-                setState(() => _selectedRegion = value);
-              },
-              onDistrictChanged: (value) {
-                setState(() => _selectedDistrict = value);
-              },
               onFieldChanged: () => setState(() {}),
               onSubmit: _submit,
             ),
@@ -650,7 +606,7 @@ class _ConfirmStep extends StatelessWidget {
                 SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'AI\uac00 \ubd84\ub958\ud55c \uacb0\uacfc\uc785\ub2c8\ub2e4.\\n\uc815\ubcf4\uac00 \ub9de\ub294\uc9c0 \ud655\uc778\ud558\uace0 \ud544\uc694\ud558\uba74 \uc218\uc815\ud574 \uc8fc\uc138\uc694.',
+                    'AI\uac00 \ubd84\ub958\ud55c \uacb0\uacfc\uc785\ub2c8\ub2e4.\n\uc815\ubcf4\uac00 \ub9de\ub294\uc9c0 \ud655\uc778\ud558\uace0 \ud544\uc694\ud558\uba74 \uc218\uc815\ud574 \uc8fc\uc138\uc694.',
                     style: TextStyle(
                       color: Color(0xFF3855F6),
                       fontSize: 12,
@@ -700,12 +656,7 @@ class _DetailStep extends StatelessWidget {
   const _DetailStep({
     super.key,
     required this.foundDateText,
-    required this.useMapLocation,
     required this.mapLocation,
-    required this.selectedRegion,
-    required this.selectedDistrict,
-    required this.regions,
-    required this.districts,
     required this.passwordController,
     required this.contactController,
     required this.descriptionController,
@@ -714,21 +665,13 @@ class _DetailStep extends StatelessWidget {
     required this.onBack,
     required this.onClose,
     required this.onPickDate,
-    required this.onUseMapChanged,
     required this.onOpenMap,
-    required this.onRegionChanged,
-    required this.onDistrictChanged,
     required this.onFieldChanged,
     required this.onSubmit,
   });
 
   final String foundDateText;
-  final bool useMapLocation;
   final String? mapLocation;
-  final String selectedRegion;
-  final String selectedDistrict;
-  final List<String> regions;
-  final List<String> districts;
   final TextEditingController passwordController;
   final TextEditingController contactController;
   final TextEditingController descriptionController;
@@ -737,10 +680,7 @@ class _DetailStep extends StatelessWidget {
   final VoidCallback onBack;
   final VoidCallback onClose;
   final VoidCallback onPickDate;
-  final ValueChanged<bool> onUseMapChanged;
   final VoidCallback onOpenMap;
-  final ValueChanged<String> onRegionChanged;
-  final ValueChanged<String> onDistrictChanged;
   final VoidCallback onFieldChanged;
   final VoidCallback onSubmit;
 
@@ -774,32 +714,13 @@ class _DetailStep extends StatelessWidget {
           _DateBox(text: foundDateText, onTap: onPickDate),
           const SizedBox(height: 14),
           const _RequiredLabel('\uc2b5\ub4dd \uc7a5\uc18c'),
-          _SegmentedLocationControl(
-            useMapLocation: useMapLocation,
-            onChanged: onUseMapChanged,
+          _LocationButton(
+            text:
+                mapLocation ??
+                '\uc9c0\ub3c4\uc5d0\uc11c \uc704\uce58\ub97c \uc120\ud0dd\ud574 \uc8fc\uc138\uc694',
+            selected: mapLocation != null,
+            onTap: onOpenMap,
           ),
-          const SizedBox(height: 10),
-          if (useMapLocation)
-            _LocationButton(
-              text:
-                  mapLocation ??
-                  '\uc9c0\ub3c4\uc5d0\uc11c \uc704\uce58\ub97c \uc120\ud0dd\ud574 \uc8fc\uc138\uc694',
-              selected: mapLocation != null,
-              onTap: onOpenMap,
-            )
-          else ...[
-            _SelectBox(
-              value: selectedRegion,
-              items: regions,
-              onChanged: onRegionChanged,
-            ),
-            const SizedBox(height: 8),
-            _SelectBox(
-              value: selectedDistrict,
-              items: districts,
-              onChanged: onDistrictChanged,
-            ),
-          ],
           const SizedBox(height: 14),
           const _RequiredLabel('\ud328\uc2a4\uc6cc\ub4dc'),
           _InputBox(
@@ -868,6 +789,61 @@ class _LocationStepState extends State<_LocationStep> {
   bool _isLoadingLocation = true;
   bool _isResolvingAddress = false;
   String? _locationMessage;
+  // 수정·삭제 지도와 같은 주소 미리보기 상태/업데이트 흐름.
+  String? _selectedDisplayLabel;
+  bool _isPreviewResolving = false;
+  Timer? _previewDebounce;
+  int _previewRequestId = 0;
+
+  void _onCameraIdle(LatLng latLng) {
+    _previewDebounce?.cancel();
+    ++_previewRequestId;
+    setState(() {
+      _selectedCenter = latLng;
+      _isPreviewResolving = true;
+      _selectedDisplayLabel = null;
+    });
+    _previewDebounce = Timer(const Duration(milliseconds: 350), () {
+      _updateSelectionPreview(latLng);
+    });
+  }
+
+  Future<void> _updateSelectionPreview(LatLng latLng) async {
+    if (!mounted) return;
+    final requestId = ++_previewRequestId;
+    setState(() => _isPreviewResolving = true);
+
+    // 수정·삭제의 _updateSelectionPreview와 동일한 병렬 주소조회.
+    final addressFuture = _resolveAddress(latLng);
+    final regionFuture = _resolveRegion(latLng);
+    final address = await addressFuture;
+    var region = await regionFuture;
+    if (region.sido.isEmpty || region.sigungu.isEmpty) {
+      region = _regionFromAddressLabel(address ?? '');
+    }
+
+    if (!mounted || requestId != _previewRequestId) return;
+    setState(() {
+      _selectedDisplayLabel = _bestLocationLabel(address, region);
+      _isPreviewResolving = false;
+    });
+  }
+
+  String? _bestLocationLabel(String? address, _RegionSelection region) {
+    final regionText = [region.sido, region.sigungu, region.eupmyeondong]
+        .where((part) => part.trim().isNotEmpty)
+        .join(' ');
+    if (regionText.isNotEmpty) return regionText;
+    final value = address?.trim() ?? '';
+    return value.isEmpty ? null : value;
+  }
+
+  @override
+  void dispose() {
+    _previewDebounce?.cancel();
+    ++_previewRequestId;
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -933,6 +909,9 @@ class _LocationStepState extends State<_LocationStep> {
         _isLoadingLocation = false;
       });
 
+      if (_mapController != null) {
+        await _updateSelectionPreview(widget.initialLocation ?? latLng);
+      }
       if (widget.initialLocation == null) {
         _mapController?.setCenter(latLng);
         _mapController?.setLevel(3);
@@ -957,7 +936,7 @@ class _LocationStepState extends State<_LocationStep> {
     }
 
     _mapController?.setCenter(_currentLocation!);
-    setState(() => _selectedCenter = _currentLocation!);
+    await _updateSelectionPreview(_currentLocation!);
   }
 
   Future<void> _confirmLocation() async {
@@ -967,94 +946,442 @@ class _LocationStepState extends State<_LocationStep> {
 
     setState(() => _isResolvingAddress = true);
 
-    final controller = _mapController;
-    final selectedCenter = _selectedCenter;
-    if (controller == null && selectedCenter == null) {
-      setState(() => _isResolvingAddress = false);
-      return;
+    try {
+      final controller = _mapController;
+      final selectedCenter = _selectedCenter;
+      if (controller == null && selectedCenter == null) {
+        return;
+      }
+
+      final center = controller == null
+          ? selectedCenter!
+          : await controller
+                .getCenter()
+                .timeout(
+                  const Duration(seconds: 2),
+                  onTimeout: () => selectedCenter!,
+                )
+                .catchError((_) => selectedCenter!);
+
+      final labelFuture = _resolveAddress(center);
+      final regionFuture = _resolveRegion(center);
+
+      final label = await labelFuture;
+      var region = await regionFuture;
+
+      if (region.sido.isEmpty || region.sigungu.isEmpty) {
+        region = _regionFromAddressLabel(label ?? '');
+      }
+
+      debugPrint(
+        '선택 위치 확정: lat=${center.latitude}, lon=${center.longitude}, '
+        'label=$label, sido=${region.sido}, sigungu=${region.sigungu}, '
+        'eupmyeondong=${region.eupmyeondong}',
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      if (region.sido.isEmpty || region.sigungu.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              '선택한 위치의 시/군/구 정보를 확인하지 못했습니다. '
+              '지도를 조금 이동한 뒤 다시 선택해 주세요.',
+            ),
+          ),
+        );
+        return;
+      }
+
+      widget.onPickLocation(
+        _LocationSelection(
+          latLng: center,
+          label: [region.sido, region.sigungu, region.eupmyeondong]
+              .where((part) => part.trim().isNotEmpty).join(' '),
+          sido: region.sido,
+          sigungu: region.sigungu,
+          eupmyeondong: region.eupmyeondong,
+        ),
+      );
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('위치 정보를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isResolvingAddress = false);
+      }
+    }
+  }
+
+  _RegionSelection _regionFromAddressLabel(String label) {
+    final normalized = label.trim().replaceAll(RegExp(r'\s+'), ' ');
+    if (normalized.isEmpty || normalized.contains(',')) {
+      return _RegionSelection.empty;
     }
 
-    final center = controller == null
-        ? selectedCenter!
-        : await controller.getCenter().catchError((_) => selectedCenter!);
-    final label = await _resolveAddress(center);
-    final region = await _resolveRegion(center);
-
-    if (!mounted) {
-      return;
+    final parts = normalized.split(' ');
+    if (parts.length < 2) {
+      return _RegionSelection.empty;
     }
 
-    setState(() => _isResolvingAddress = false);
-    widget.onPickLocation(
-      _LocationSelection(
-        latLng: center,
-        label: label,
-        sido: region.sido,
-        sigungu: region.sigungu,
-        eupmyeondong: region.eupmyeondong,
-      ),
+    const sidoMap = {
+      '서울': '서울특별시',
+      '서울특별시': '서울특별시',
+      '부산': '부산광역시',
+      '부산광역시': '부산광역시',
+      '대구': '대구광역시',
+      '대구광역시': '대구광역시',
+      '인천': '인천광역시',
+      '인천광역시': '인천광역시',
+      '광주': '광주광역시',
+      '광주광역시': '광주광역시',
+      '대전': '대전광역시',
+      '대전광역시': '대전광역시',
+      '울산': '울산광역시',
+      '울산광역시': '울산광역시',
+      '세종': '세종특별자치시',
+      '세종특별자치시': '세종특별자치시',
+      '경기': '경기도',
+      '경기도': '경기도',
+      '강원': '강원특별자치도',
+      '강원도': '강원특별자치도',
+      '강원특별자치도': '강원특별자치도',
+      '충북': '충청북도',
+      '충청북도': '충청북도',
+      '충남': '충청남도',
+      '충청남도': '충청남도',
+      '전북': '전북특별자치도',
+      '전라북도': '전북특별자치도',
+      '전북특별자치도': '전북특별자치도',
+      '전남': '전라남도',
+      '전라남도': '전라남도',
+      '경북': '경상북도',
+      '경상북도': '경상북도',
+      '경남': '경상남도',
+      '경상남도': '경상남도',
+      '제주': '제주특별자치도',
+      '제주도': '제주특별자치도',
+      '제주특별자치도': '제주특별자치도',
+    };
+
+    final sido = sidoMap[parts.first];
+    if (sido == null) {
+      return _RegionSelection.empty;
+    }
+
+    final sigungu = parts[1];
+    final eupmyeondong = parts.length >= 3 ? parts[2] : '';
+
+    return _RegionSelection(
+      sido: sido,
+      sigungu: sigungu,
+      eupmyeondong: eupmyeondong,
     );
   }
 
+  String _canonicalSido(String value) {
+    const sidoMap = {
+      '서울': '서울특별시',
+      '서울특별시': '서울특별시',
+      '부산': '부산광역시',
+      '부산광역시': '부산광역시',
+      '대구': '대구광역시',
+      '대구광역시': '대구광역시',
+      '인천': '인천광역시',
+      '인천광역시': '인천광역시',
+      '광주': '광주광역시',
+      '광주광역시': '광주광역시',
+      '대전': '대전광역시',
+      '대전광역시': '대전광역시',
+      '울산': '울산광역시',
+      '울산광역시': '울산광역시',
+      '세종': '세종특별자치시',
+      '세종특별자치시': '세종특별자치시',
+      '경기': '경기도',
+      '경기도': '경기도',
+      '강원': '강원특별자치도',
+      '강원도': '강원특별자치도',
+      '강원특별자치도': '강원특별자치도',
+      '충북': '충청북도',
+      '충청북도': '충청북도',
+      '충남': '충청남도',
+      '충청남도': '충청남도',
+      '전북': '전북특별자치도',
+      '전라북도': '전북특별자치도',
+      '전북특별자치도': '전북특별자치도',
+      '전남': '전라남도',
+      '전라남도': '전라남도',
+      '경북': '경상북도',
+      '경상북도': '경상북도',
+      '경남': '경상남도',
+      '경상남도': '경상남도',
+      '제주': '제주특별자치도',
+      '제주도': '제주특별자치도',
+      '제주특별자치도': '제주특별자치도',
+    };
+
+    return sidoMap[value.trim()] ?? value.trim();
+  }
+
   Future<_RegionSelection> _resolveRegion(LatLng latLng) async {
+    // 1차: Kakao Map SDK 자체 좌표 -> 행정구역 변환
     final controller = _mapController;
-    if (controller == null) {
+    if (controller != null) {
+      try {
+        final response = await controller
+            .coord2RegionCode(
+              Coord2RegionCodeRequest(x: latLng.longitude, y: latLng.latitude),
+            )
+            .timeout(const Duration(seconds: 3));
+
+        Coord2RegionCode? selectedRegion;
+
+        for (final region in response.list) {
+          if (region.regionType == 'H') {
+            selectedRegion = region;
+            break;
+          }
+        }
+
+        if (selectedRegion == null && response.list.isNotEmpty) {
+          selectedRegion = response.list.first;
+        }
+
+        if (selectedRegion != null) {
+          final result = _normalizeResolvedRegion(
+            sidoRaw: selectedRegion.region1DepthName?.trim() ?? '',
+            sigunguRaw: selectedRegion.region2DepthName?.trim() ?? '',
+            eupmyeondongRaw: selectedRegion.region3DepthName?.trim() ?? '',
+          );
+
+          if (result.sido.isNotEmpty && result.sigungu.isNotEmpty) {
+            return result;
+          }
+        }
+      } catch (e) {
+        debugPrint('Kakao coord2RegionCode 실패: $e');
+      }
+    }
+
+    // 2차: 기기 reverse geocoding으로 재시도.
+    // lost_search_page에서도 이미 geocoding 패키지를 사용하고 있으므로
+    // REST API 키를 앱에 넣지 않고 지역명을 얻을 수 있다.
+    try {
+      final placemarks = await Geocoding(locale: const Locale('ko', 'KR'))
+          .placemarkFromCoordinates(latLng.latitude, latLng.longitude)
+          .timeout(const Duration(seconds: 6));
+
+      for (final placemark in placemarks) {
+        final sidoCandidates = <String>[
+          placemark.administrativeArea ?? '',
+          placemark.locality ?? '',
+        ];
+
+        String sido = '';
+        for (final candidate in sidoCandidates) {
+          final normalized = _canonicalSido(candidate);
+          if (_isSupportedSido(normalized)) {
+            sido = normalized;
+            break;
+          }
+        }
+
+        if (sido.isEmpty) {
+          continue;
+        }
+
+        final sigunguCandidates = <String>[
+          placemark.subAdministrativeArea ?? '',
+          placemark.locality ?? '',
+          placemark.subLocality ?? '',
+          placemark.name ?? '',
+        ];
+
+        String sigungu = '';
+        for (final candidate in sigunguCandidates) {
+          sigungu = _normalizeSigunguForSearch(sido, candidate);
+          if (sigungu.isNotEmpty) {
+            break;
+          }
+        }
+
+        String eupmyeondong = '';
+        for (final candidate in <String>[
+          placemark.subLocality ?? '',
+          placemark.thoroughfare ?? '',
+          placemark.name ?? '',
+        ]) {
+          final value = candidate.trim();
+          if (_looksLikeEupmyeondong(value)) {
+            eupmyeondong = value.split(' ').last;
+            break;
+          }
+        }
+
+        // 세종은 일반적인 시/군/구 2단계가 없어서 앱의 대표 지역 키를 세종시로 통일
+        if (sido == '세종특별자치시' && sigungu.isEmpty) {
+          sigungu = '세종시';
+        }
+
+        if (sigungu.isNotEmpty) {
+          return _RegionSelection(
+            sido: sido,
+            sigungu: sigungu,
+            eupmyeondong: eupmyeondong,
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('reverse geocoding 실패: $e');
+    }
+
+    return _RegionSelection.empty;
+  }
+
+  _RegionSelection _normalizeResolvedRegion({
+    required String sidoRaw,
+    required String sigunguRaw,
+    required String eupmyeondongRaw,
+  }) {
+    final sido = _canonicalSido(sidoRaw);
+
+    if (!_isSupportedSido(sido)) {
       return _RegionSelection.empty;
     }
 
-    try {
-      final response = await controller.coord2RegionCode(
-        Coord2RegionCodeRequest(
-          x: latLng.longitude,
-          y: latLng.latitude,
-        ),
-      );
+    var sigungu = _normalizeSigunguForSearch(sido, sigunguRaw);
+    var eupmyeondong = eupmyeondongRaw.trim();
 
-      Coord2RegionCode? selectedRegion;
+    if (sido == '세종특별자치시') {
+      sigungu = '세종시';
+      if (eupmyeondong.isEmpty && _looksLikeEupmyeondong(sigunguRaw)) {
+        eupmyeondong = sigunguRaw.trim().split(' ').last;
+      }
+    }
 
-      for (final region in response.list) {
-        if (region.regionType == 'H') {
-          selectedRegion = region;
-          break;
+    return _RegionSelection(
+      sido: sido,
+      sigungu: sigungu,
+      eupmyeondong: eupmyeondong,
+    );
+  }
+
+  bool _isSupportedSido(String value) {
+    return const {
+      '서울특별시',
+      '부산광역시',
+      '대구광역시',
+      '인천광역시',
+      '광주광역시',
+      '대전광역시',
+      '울산광역시',
+      '세종특별자치시',
+      '경기도',
+      '강원특별자치도',
+      '충청북도',
+      '충청남도',
+      '전북특별자치도',
+      '전라남도',
+      '경상북도',
+      '경상남도',
+      '제주특별자치도',
+    }.contains(value);
+  }
+
+  String _normalizeSigunguForSearch(String sido, String raw) {
+    final value = raw.trim().replaceAll(RegExp(r'\s+'), ' ');
+    if (value.isEmpty) {
+      return '';
+    }
+
+    if (sido == '세종특별자치시') {
+      return '세종시';
+    }
+
+    final tokens = value.split(' ');
+
+    final isMetro = const {
+      '서울특별시',
+      '부산광역시',
+      '대구광역시',
+      '인천광역시',
+      '광주광역시',
+      '대전광역시',
+      '울산광역시',
+    }.contains(sido);
+
+    if (isMetro) {
+      for (final token in tokens) {
+        if (token.endsWith('구') || token.endsWith('군')) {
+          return token;
+        }
+      }
+    } else {
+      // 도 단위 지역은 수원시 팔달구처럼 들어와도 검색 필터 기준은 수원시.
+      for (final token in tokens) {
+        if (token.endsWith('시') || token.endsWith('군')) {
+          return token;
         }
       }
 
-      if (selectedRegion == null && response.list.isNotEmpty) {
-        selectedRegion = response.list.first;
+      // 제주도는 제주시/서귀포시가 locality 쪽에만 잡히는 경우가 있다.
+      if (sido == '제주특별자치도') {
+        for (final token in tokens) {
+          if (token == '제주시' || token == '서귀포시') {
+            return token;
+          }
+        }
       }
-
-      return _RegionSelection(
-        sido: selectedRegion?.region1DepthName?.trim() ?? '',
-        sigungu: selectedRegion?.region2DepthName?.trim() ?? '',
-        eupmyeondong: selectedRegion?.region3DepthName?.trim() ?? '',
-      );
-    } catch (_) {
-      return _RegionSelection.empty;
     }
+
+    return '';
   }
 
-  Future<String> _resolveAddress(LatLng latLng) async {
+  bool _looksLikeEupmyeondong(String raw) {
+    final value = raw.trim();
+    if (value.isEmpty) {
+      return false;
+    }
+
+    final last = value.split(RegExp(r'\s+')).last;
+    return last.endsWith('읍') ||
+        last.endsWith('면') ||
+        last.endsWith('동') ||
+        last.endsWith('가') ||
+        last.endsWith('리');
+  }
+
+  Future<String?> _resolveAddress(LatLng latLng) async {
     final controller = _mapController;
     if (controller == null) {
-      return _latLngLabel(latLng);
+      return null;
     }
 
     try {
-      final response = await controller.coord2Address(
-        Coord2AddressRequest(x: latLng.longitude, y: latLng.latitude),
-      );
+      final response = await controller
+          .coord2Address(
+            Coord2AddressRequest(x: latLng.longitude, y: latLng.latitude),
+          )
+          .timeout(const Duration(seconds: 3));
 
       if (response.list.isNotEmpty) {
         final address = response.list.first;
         return address.roadAddress?.addressName ??
             address.address?.addressName ??
-            _latLngLabel(latLng);
+            null;
       }
     } catch (_) {
-      return _latLngLabel(latLng);
+      return null;
     }
 
-    return _latLngLabel(latLng);
+    return null;
   }
 
   String _latLngLabel(LatLng latLng) {
@@ -1088,20 +1415,9 @@ class _LocationStepState extends State<_LocationStep> {
                   _mapController = controller;
                   controller.setCenter(mapCenter);
                   controller.setLevel(3);
+                  _updateSelectionPreview(mapCenter);
                 },
-                onCameraIdle: (latLng, _) {
-                  setState(() => _selectedCenter = latLng);
-                },
-                markers: _currentLocation == null
-                    ? null
-                    : [
-                        Marker(
-                          markerId: 'current-location',
-                          latLng: _currentLocation!,
-                          width: 24,
-                          height: 24,
-                        ),
-                      ],
+                onCameraIdle: (latLng, _) => _onCameraIdle(latLng),
                 gestureRecognizers: {
                   Factory<OneSequenceGestureRecognizer>(
                     () => EagerGestureRecognizer(),
@@ -1157,7 +1473,8 @@ class _LocationStepState extends State<_LocationStep> {
               right: 20,
               bottom: 20,
               child: _MapSelectionPanel(
-                latLng: _selectedCenter!,
+                regionLabel: _selectedDisplayLabel,
+                isPreviewResolving: _isPreviewResolving,
                 isResolvingAddress: _isResolvingAddress,
                 onConfirm: _confirmLocation,
               ),
@@ -1328,12 +1645,14 @@ class _LocationLoadingMap extends StatelessWidget {
 
 class _MapSelectionPanel extends StatelessWidget {
   const _MapSelectionPanel({
-    required this.latLng,
+    required this.regionLabel,
+    required this.isPreviewResolving,
     required this.isResolvingAddress,
     required this.onConfirm,
   });
 
-  final LatLng latLng;
+  final String? regionLabel;
+  final bool isPreviewResolving;
   final bool isResolvingAddress;
   final VoidCallback onConfirm;
 
@@ -1365,21 +1684,38 @@ class _MapSelectionPanel extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 5),
-          Text(
-            '${latLng.latitude.toStringAsFixed(6)}, '
-            '${latLng.longitude.toStringAsFixed(6)}',
-            style: const TextStyle(
-              color: Color(0xFF111827),
-              fontSize: 14,
-              fontWeight: FontWeight.w800,
-            ),
+          Row(
+            children: [
+              if (isPreviewResolving) ...[
+                const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                const SizedBox(width: 8),
+              ],
+              Expanded(
+                child: Text(
+                  isPreviewResolving
+                      ? '해당 지역을 확인하는 중입니다...'
+                      : (regionLabel ?? '주소를 확인하지 못했습니다.'),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF111827),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 12),
           _PrimaryButton(
             text: isResolvingAddress
                 ? '\uc704\uce58 \ud655\uc778 \uc911...'
                 : '\uc774 \uc704\uce58 \uc120\ud0dd',
-            enabled: !isResolvingAddress,
+            enabled: !isResolvingAddress && !isPreviewResolving && regionLabel != null,
             onTap: onConfirm,
           ),
         ],
@@ -1425,7 +1761,7 @@ class _CompleteStep extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             const Text(
-              '\uc2b5\ub4dd\ubb3c\uc774 \uc131\uacf5\uc801\uc73c\ub85c \ub4f1\ub85d\ub418\uc5c8\uc2b5\ub2c8\ub2e4.\\n\uac80\uc0c9 \uacb0\uacfc\uc5d0\uc11c \ud655\uc778\ud560 \uc218 \uc788\uc2b5\ub2c8\ub2e4.',
+              '\uc2b5\ub4dd\ubb3c\uc774 \uc131\uacf5\uc801\uc73c\ub85c \ub4f1\ub85d\ub418\uc5c8\uc2b5\ub2c8\ub2e4.\n\uac80\uc0c9 \uacb0\uacfc\uc5d0\uc11c \ud655\uc778\ud560 \uc218 \uc788\uc2b5\ub2c8\ub2e4.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: Color(0xFF6B7280),
@@ -1463,17 +1799,22 @@ class _GradientButton extends StatelessWidget {
       height: 52,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [Color(0xFF9B2DF4), Color(0xFF4263F5)],
-          ),
+          color: enabled ? null : const Color(0xFFE5E7EB),
+          gradient: enabled
+              ? const LinearGradient(
+                  colors: [Color(0xFF9B2DF4), Color(0xFF4263F5)],
+                )
+              : null,
           borderRadius: BorderRadius.circular(10),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF4263F5).withValues(alpha: 0.25),
-              blurRadius: 16,
-              offset: const Offset(0, 8),
-            ),
-          ],
+          boxShadow: enabled
+              ? [
+                  BoxShadow(
+                    color: const Color(0xFF4263F5).withValues(alpha: 0.25),
+                    blurRadius: 16,
+                    offset: const Offset(0, 8),
+                  ),
+                ]
+              : null,
         ),
         child: Material(
           color: Colors.transparent,
@@ -1487,7 +1828,11 @@ class _GradientButton extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   if (icon != null) ...[
-                    Icon(icon, color: Colors.white, size: 20),
+                    Icon(
+                      icon,
+                      color: enabled ? Colors.white : const Color(0xFF9CA3AF),
+                      size: 20,
+                    ),
                     const SizedBox(width: 8),
                   ],
                   Flexible(
@@ -1495,8 +1840,8 @@ class _GradientButton extends StatelessWidget {
                       text,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: TextStyle(
+                        color: enabled ? Colors.white : const Color(0xFF9CA3AF),
                         fontSize: 15,
                         height: 1.2,
                         fontWeight: FontWeight.w900,
@@ -1931,7 +2276,7 @@ class _InputBox extends StatelessWidget {
   }
 }
 
-class _SelectBox extends StatelessWidget {
+class _SelectBox extends StatefulWidget {
   const _SelectBox({
     required this.value,
     required this.items,
@@ -1943,44 +2288,185 @@ class _SelectBox extends StatelessWidget {
   final ValueChanged<String> onChanged;
 
   @override
-  Widget build(BuildContext context) {
-    return DropdownButtonFormField<String>(
-      initialValue: value,
-      items: items
-          .map((item) => DropdownMenuItem(value: item, child: Text(item)))
-          .toList(),
-      onChanged: (value) {
-        if (value != null) {
-          onChanged(value);
+  State<_SelectBox> createState() => _SelectBoxState();
+}
+
+class _SelectBoxState extends State<_SelectBox> {
+  bool _isOpen = false;
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void didUpdateWidget(covariant _SelectBox oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    if (oldWidget.items != widget.items || oldWidget.value != widget.value) {
+      _isOpen = false;
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _toggle() {
+    setState(() => _isOpen = !_isOpen);
+
+    if (_isOpen) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!_scrollController.hasClients) {
+          return;
         }
-      },
-      icon: const Icon(Icons.keyboard_arrow_down),
-      decoration: InputDecoration(
-        isDense: true,
-        filled: true,
-        fillColor: Colors.white,
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 14,
-          vertical: 12,
-        ),
-        border: OutlineInputBorder(
+
+        final selectedIndex = widget.items.indexOf(widget.value);
+        if (selectedIndex < 0) {
+          return;
+        }
+
+        const itemHeight = 46.0;
+        final targetOffset = selectedIndex * itemHeight;
+        final maxOffset = _scrollController.position.maxScrollExtent;
+
+        _scrollController.jumpTo(targetOffset.clamp(0.0, maxOffset));
+      });
+    }
+  }
+
+  void _select(String value) {
+    widget.onChanged(value);
+    setState(() => _isOpen = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final selectedValue = widget.items.contains(widget.value)
+        ? widget.value
+        : (widget.items.isNotEmpty ? widget.items.first : '');
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Material(
+          color: Colors.white,
           borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: Color(0xFFD3DEFF)),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: widget.items.isEmpty ? null : _toggle,
+            child: Container(
+              constraints: const BoxConstraints(minHeight: 48),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: _isOpen
+                      ? const Color(0xFF5271FF)
+                      : const Color(0xFFD3DEFF),
+                  width: _isOpen ? 1.4 : 1,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      selectedValue.isEmpty ? '선택해 주세요' : selectedValue,
+                      style: TextStyle(
+                        color: selectedValue.isEmpty
+                            ? const Color(0xFF9CA3AF)
+                            : const Color(0xFF111827),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  AnimatedRotation(
+                    turns: _isOpen ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 160),
+                    child: const Icon(
+                      Icons.keyboard_arrow_down,
+                      size: 22,
+                      color: Color(0xFF6B7280),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: Color(0xFFD3DEFF)),
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 160),
+          child: !_isOpen
+              ? const SizedBox.shrink()
+              : Container(
+                  key: const ValueKey('inline-select-list'),
+                  margin: const EdgeInsets.only(top: 6),
+                  constraints: const BoxConstraints(maxHeight: 230),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFD3DEFF)),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: Scrollbar(
+                    controller: _scrollController,
+                    thumbVisibility: widget.items.length > 5,
+                    child: ListView.separated(
+                      controller: _scrollController,
+                      shrinkWrap: true,
+                      padding: EdgeInsets.zero,
+                      itemCount: widget.items.length,
+                      separatorBuilder: (_, _) =>
+                          const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                      itemBuilder: (context, index) {
+                        final item = widget.items[index];
+                        final selected = item == selectedValue;
+
+                        return Material(
+                          color: selected
+                              ? const Color(0xFFF3F7FF)
+                              : Colors.white,
+                          child: InkWell(
+                            onTap: () => _select(item),
+                            child: SizedBox(
+                              height: 46,
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                ),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        item,
+                                        style: TextStyle(
+                                          color: selected
+                                              ? const Color(0xFF4263F5)
+                                              : const Color(0xFF111827),
+                                          fontSize: 14,
+                                          fontWeight: selected
+                                              ? FontWeight.w800
+                                              : FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                    if (selected)
+                                      const Icon(
+                                        Icons.check,
+                                        size: 18,
+                                        color: Color(0xFF4263F5),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
         ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: Color(0xFF5271FF), width: 1.4),
-        ),
-      ),
-      style: const TextStyle(
-        color: Color(0xFF111827),
-        fontSize: 14,
-        fontWeight: FontWeight.w700,
-      ),
+      ],
     );
   }
 }
@@ -2018,81 +2504,6 @@ class _DateBox extends StatelessWidget {
             color: Color(0xFF111827),
             fontSize: 14,
             fontWeight: FontWeight.w700,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _SegmentedLocationControl extends StatelessWidget {
-  const _SegmentedLocationControl({
-    required this.useMapLocation,
-    required this.onChanged,
-  });
-
-  final bool useMapLocation;
-  final ValueChanged<bool> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 42,
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF2F4F8),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: _SegmentButton(
-              text: '\uc9c0\ub3c4\uc5d0\uc11c \uc120\ud0dd',
-              selected: useMapLocation,
-              onTap: () => onChanged(true),
-            ),
-          ),
-          const SizedBox(width: 6),
-          Expanded(
-            child: _SegmentButton(
-              text: '\uc9c0\uc5ed \uc120\ud0dd',
-              selected: !useMapLocation,
-              onTap: () => onChanged(false),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SegmentButton extends StatelessWidget {
-  const _SegmentButton({
-    required this.text,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String text;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: selected ? const Color(0xFF4263F5) : Colors.transparent,
-      borderRadius: BorderRadius.circular(6),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(6),
-        onTap: onTap,
-        child: Center(
-          child: Text(
-            text,
-            style: TextStyle(
-              color: selected ? Colors.white : const Color(0xFF6B7280),
-              fontSize: 12,
-              fontWeight: FontWeight.w900,
-            ),
           ),
         ),
       ),

@@ -5,7 +5,9 @@ import 'package:kakao_map_plugin/kakao_map_plugin.dart';
 
 import '../lost_models/lost_item.dart';
 import '../lost_models/lost_search_filter.dart';
+import '../utils/current_position.dart';
 import 'distance_reference_map_page.dart';
+import 'lost_item_detail_page.dart';
 
 enum _DistanceReferenceChoice { currentLocation, map }
 
@@ -34,7 +36,7 @@ class _LostSearchResultPageState extends State<LostSearchResultPage> {
   static const int _pageSize = 20;
   static final RegExp _searchSeparator = RegExp(r'[^0-9a-zA-Z가-힣]+');
 
-  LostSearchSortOption selectedSort = LostSearchSortOption.similarity;
+  LostSearchSortOption selectedSort = LostSearchSortOption.newest;
   DistanceReference? _distanceReference;
   final List<LostItem> _items = [];
   DocumentSnapshot<Map<String, dynamic>>? _lastDocument;
@@ -118,8 +120,15 @@ class _LostSearchResultPageState extends State<LostSearchResultPage> {
           formatDate: _formatDate,
           showDistance: selectedSort == LostSearchSortOption.nearest,
           distanceMeters: _distanceTo(items[index]),
+          onTap: () => _openItemDetail(items[index]),
         );
       },
+    );
+  }
+
+  void _openItemDetail(LostItem item) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => LostItemDetailPage(item: item)),
     );
   }
 
@@ -186,7 +195,7 @@ class _LostSearchResultPageState extends State<LostSearchResultPage> {
             children: [
               Expanded(
                 child: Text(
-                  _hasMore ? '불러온 검색 결과 $count건' : '검색 결과 $count건',
+                  _hasMore ? '검색결과 최신 $count건' : '검색결과 $count건',
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
@@ -386,11 +395,7 @@ class _LostSearchResultPageState extends State<LostSearchResultPage> {
         return null;
       }
 
-      final position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-        ),
-      );
+      final position = await getReliableCurrentPosition();
       return DistanceReference(
         location: LatLng(position.latitude, position.longitude),
         label: '현재 위치',
@@ -491,27 +496,27 @@ class _LostSearchResultPageState extends State<LostSearchResultPage> {
     });
 
     try {
-      Query<Map<String, dynamic>> query = _buildQuery().limit(_pageSize);
-      final lastDocument = _lastDocument;
-      if (lastDocument != null) {
-        query = query.startAfterDocument(lastDocument);
-      }
-
-      final QuerySnapshot<Map<String, dynamic>> snapshot = await query.get();
-      final List<LostItem> newItems = snapshot.docs
-          .map(LostItem.fromDoc)
-          .where(_matchesFilter)
-          .toList();
-
-      if (!mounted) {
-        return;
-      }
+      var cursor = _lastDocument;
+      var hasMore = _hasMore;
+      final newItems = <LostItem>[];
+      // Keep searching past raw pages containing no matching items.
+      do {
+        Query<Map<String, dynamic>> query = _buildQuery().limit(_pageSize);
+        if (cursor != null) query = query.startAfterDocument(cursor);
+        final snapshot = await query.get(const GetOptions(source: Source.server));
+        if (!mounted) return;
+        newItems.addAll(snapshot.docs.map(LostItem.fromDoc).where(_matchesFilter));
+        if (snapshot.docs.isNotEmpty) cursor = snapshot.docs.last;
+        hasMore = snapshot.docs.length == _pageSize;
+        // Retain progress if a later request fails so retry does not rescan pages.
+        _lastDocument = cursor;
+        _hasMore = hasMore;
+      } while (newItems.isEmpty && hasMore);
+      if (!mounted) return;
       setState(() {
         _items.addAll(newItems);
-        if (snapshot.docs.isNotEmpty) {
-          _lastDocument = snapshot.docs.last;
-        }
-        _hasMore = snapshot.docs.length == _pageSize;
+        _lastDocument = cursor;
+        _hasMore = hasMore;
         _isInitialLoading = false;
         _isLoadingMore = false;
       });
@@ -520,11 +525,30 @@ class _LostSearchResultPageState extends State<LostSearchResultPage> {
         return;
       }
       setState(() {
-        _loadError = error;
+        _loadError = _searchErrorMessage(error);
         _isInitialLoading = false;
         _isLoadingMore = false;
       });
     }
+  }
+
+  String _searchErrorMessage(Object error) {
+    if (error is FirebaseException) {
+      switch (error.code) {
+        case 'unavailable':
+          return '서버에 연결하지 못했습니다. 인터넷 연결을 확인한 뒤 다시 시도해 주세요.';
+        case 'resource-exhausted':
+          return '현재 검색 요청이 많습니다. 잠시 후 다시 시도해 주세요.';
+        case 'permission-denied':
+          return '검색 데이터에 접근할 권한이 없습니다. Firestore 보안 규칙을 확인해 주세요.';
+        case 'failed-precondition':
+          return '검색에 필요한 Firestore 색인이 준비되지 않았습니다.';
+        case 'deadline-exceeded':
+          return '서버 응답 시간이 초과되었습니다. 다시 시도해 주세요.';
+      }
+      return 'Firestore 검색 오류가 발생했습니다. (${error.code})';
+    }
+    return '검색 결과를 불러오는 중 오류가 발생했습니다. 다시 시도해 주세요.';
   }
 
   Query<Map<String, dynamic>> _buildQuery() {
@@ -543,12 +567,8 @@ class _LostSearchResultPageState extends State<LostSearchResultPage> {
       query = query.where('sido', isEqualTo: filter.region);
     }
 
-    if (filter.subregion != null) {
-      final subregionField = filter.region == '세종특별자치시'
-          ? 'eupmyeondong'
-          : 'sigungu';
-      query = query.where(subregionField, isEqualTo: filter.subregion);
-    }
+    // District values can be a bare name, a full region label, or absent
+    // in older documents. Apply the district predicate after fetching.
 
     if (filter.dateRange != null) {
       query = query
@@ -719,10 +739,22 @@ class _LostSearchResultPageState extends State<LostSearchResultPage> {
   }
 
   bool _matchesSubregion(LostItem item, String subregion) {
-    final itemRegion = _normalizeSearchText(
-      '${item.sigungu ?? ''} ${item.eupmyeondong ?? ''}',
-    );
-    return itemRegion.contains(_normalizeSearchText(subregion));
+    final wanted = subregion.trim().replaceAll(RegExp(r'\s+'), ' ');
+    if (wanted.isEmpty) return true;
+    bool matches(String? value) {
+      final text = (value ?? '').trim().replaceAll(RegExp(r'\s+'), ' ');
+      if (text.isEmpty) return false;
+      if (text == wanted) return true;
+      // Match region tokens, preserving the distinction between 중구 and 중랑구.
+      return ' $text '.contains(' $wanted ');
+    }
+    final district = item.sigungu?.trim() ?? '';
+    if (widget.filter.region == '세종특별자치시') {
+      return matches(item.eupmyeondong) ||
+          (item.eupmyeondong?.trim().isEmpty ?? true) && matches(item.fndPlace);
+    }
+    if (district.isNotEmpty) return matches(district);
+    return matches(item.fndPlace);
   }
 
   String _normalizeSearchText(String text) {
@@ -770,93 +802,113 @@ class _LostItemCard extends StatelessWidget {
     required this.formatDate,
     required this.showDistance,
     required this.distanceMeters,
+    required this.onTap,
   });
 
   final LostItem item;
   final String Function(DateTime? date) formatDate;
   final bool showDistance;
   final double? distanceMeters;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
+    return Material(
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
+        side: const BorderSide(color: Color(0xFFE5E7EB)),
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _thumbnail(),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _thumbnail(),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: Text(
-                        item.fdPrdtNm,
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            item.fdPrdtNm,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF111827),
+                            ),
+                          ),
+                        ),
+                        if (item.prdtClNmMg != null)
+                          _categoryBadge(item.prdtClNmMg!),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    _infoRow(
+                      Icons.calendar_today_outlined,
+                      '습득일 ${formatDate(item.fdYmd)}',
+                    ),
+                    const SizedBox(height: 4),
+                    _infoRow(Icons.location_on_outlined, _locationText),
+                    if (showDistance) ...[
+                      const SizedBox(height: 4),
+                      _infoRow(
+                        Icons.near_me_outlined,
+                        distanceMeters == null
+                            ? '거리 정보 없음'
+                            : '기준 위치에서 ${_formatDistance(distanceMeters!)}',
+                      ),
+                    ],
+                    if (item.fndDescription != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        item.fndDescription!,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF111827),
+                          color: Color(0xFF6B7280),
+                          height: 1.35,
                         ),
                       ),
-                    ),
-                    if (item.prdtClNmMg != null)
-                      _categoryBadge(item.prdtClNmMg!),
+                    ],
                   ],
                 ),
-                const SizedBox(height: 8),
-                _infoRow(
-                  Icons.calendar_today_outlined,
-                  '습득일 ${formatDate(item.fdYmd)}',
-                ),
-                const SizedBox(height: 4),
-                _infoRow(Icons.location_on_outlined, _locationText),
-                if (showDistance) ...[
-                  const SizedBox(height: 4),
-                  _infoRow(
-                    Icons.near_me_outlined,
-                    distanceMeters == null
-                        ? '거리 정보 없음'
-                        : '기준 위치에서 ${_formatDistance(distanceMeters!)}',
-                  ),
-                ],
-                if (item.fndDescription != null) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    item.fndDescription!,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Color(0xFF6B7280),
-                      height: 1.35,
-                    ),
-                  ),
-                ],
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
 
   String get _locationText {
-    final List<String> parts = [
-      if (item.sido != null) item.sido!,
-      if (item.sigungu != null) item.sigungu!,
-      if (item.eupmyeondong != null) item.eupmyeondong!,
-      if (item.fndPlace != null) item.fndPlace!,
-    ];
-
-    return parts.isEmpty ? '지역 정보 없음' : parts.join(' ');
+    String clean(String? value) =>
+        (value ?? '').trim().replaceAll(RegExp(r'\s+'), ' ');
+    final region = [item.sido, item.sigungu, item.eupmyeondong]
+        .map(clean).where((part) => part.isNotEmpty).join(' ');
+    final place = clean(item.fndPlace);
+    if (region.isEmpty) return place.isEmpty ? '지역 정보 없음' : place;
+    if (place.isEmpty || region == place || region.startsWith('$place ')) {
+      return region;
+    }
+    if (place.startsWith('$region ')) return place;
+    // Remove the region prefix shared by a longer address or storage place.
+    final regionParts = region.split(' ');
+    final placeParts = place.split(' ');
+    var shared = 0;
+    while (shared < regionParts.length && shared < placeParts.length &&
+        regionParts[shared] == placeParts[shared]) {
+      shared++;
+    }
+    return [region, placeParts.skip(shared).join(' ')]
+        .where((part) => part.isNotEmpty).join(' ');
   }
 
   String _formatDistance(double meters) {

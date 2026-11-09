@@ -1,0 +1,532 @@
+import 'dart:convert';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:crypto/crypto.dart';
+import 'package:flutter/material.dart';
+
+import '../lost_models/lost_item.dart';
+import 'found_item_edit_page.dart';
+
+class FoundItemManagePage extends StatefulWidget {
+  const FoundItemManagePage({super.key});
+
+  @override
+  State<FoundItemManagePage> createState() => _FoundItemManagePageState();
+}
+
+class _FoundItemManagePageState extends State<FoundItemManagePage> {
+  bool _isLoading = true;
+  String? _errorMessage;
+  List<LostItem> _items = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadItems();
+  }
+
+  Future<void> _loadItems() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('found_items')
+          .where('polUse', isEqualTo: 'user')
+          .get(const GetOptions(source: Source.server));
+
+      final items = snapshot.docs
+          .map(LostItem.fromDoc)
+          .where((item) => item.atcId.startsWith('S'))
+          .toList()
+        ..sort((a, b) {
+          final aDate = a.fdYmd ?? DateTime.fromMillisecondsSinceEpoch(0);
+          final bDate = b.fdYmd ?? DateTime.fromMillisecondsSinceEpoch(0);
+          return bDate.compareTo(aDate);
+        });
+
+      if (!mounted) return;
+
+      setState(() {
+        _items = items;
+        _isLoading = false;
+      });
+    } on FirebaseException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _errorMessage = error.code == 'permission-denied'
+            ? '등록물에 접근할 권한이 없습니다. Firestore 보안 규칙을 확인해 주세요.'
+            : '등록물을 불러오지 못했습니다. (${error.code})';
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _errorMessage = '등록물을 불러오지 못했습니다.';
+      });
+    }
+  }
+
+  Future<void> _openItem(LostItem item) async {
+    String enteredPassword = '';
+
+    final password = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('비밀번호 확인', style: TextStyle(
+            color: Color(0xFF111827), fontSize: 19, fontWeight: FontWeight.w800,
+          )),
+          content: TextField(
+            autofocus: true,
+            obscureText: true,
+            keyboardType: TextInputType.visiblePassword,
+            textInputAction: TextInputAction.done,
+            decoration: InputDecoration(
+              labelText: '등록 비밀번호',
+              hintText: '등록할 때 입력한 비밀번호',
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: Color(0xFFD3DEFF))),
+              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: Color(0xFF4263F5), width: 1.5)),
+            ),
+            onChanged: (value) {
+              enteredPassword = value;
+            },
+            onSubmitted: (value) {
+              final trimmed = value.trim();
+              if (trimmed.isNotEmpty) {
+                Navigator.pop(dialogContext, trimmed);
+              }
+            },
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              style: TextButton.styleFrom(foregroundColor: const Color(0xFF6B7280)),
+              child: const Text('취소'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final trimmed = enteredPassword.trim();
+                if (trimmed.isNotEmpty) {
+                  Navigator.pop(dialogContext, trimmed);
+                }
+              },
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF4263F5),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              child: const Text('확인'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (!mounted || password == null || password.isEmpty) {
+      return;
+    }
+
+    // 첫 다이얼로그의 route/텍스트필드 종료가 끝난 뒤 다음 작업 수행
+    await Future<void>.delayed(const Duration(milliseconds: 350));
+
+    if (!mounted) {
+      return;
+    }
+
+    try {
+      final document = await FirebaseFirestore.instance
+          .collection('found_items')
+          .doc(item.atcId)
+          .get(const GetOptions(source: Source.server));
+
+      if (!mounted) {
+        return;
+      }
+
+      final storedPassword =
+          document.data()?['password']?.toString().trim() ?? '';
+
+      final hashedPassword = sha256
+          .convert(utf8.encode('${item.atcId}::$password'))
+          .toString();
+
+      final passwordMatches =
+          storedPassword == password || storedPassword == hashedPassword;
+
+      if (!passwordMatches) {
+        await showDialog<void>(
+          context: context,
+          builder: (dialogContext) {
+            return AlertDialog(
+              backgroundColor: Colors.white,
+              surfaceTintColor: Colors.white,
+              title: const Text('알림'),
+              content: const Text('비밀번호가 틀렸습니다.'),
+              actions: [
+                FilledButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('확인'),
+                ),
+              ],
+            );
+          },
+        );
+        return;
+      }
+
+      if (!mounted) {
+        return;
+      }
+
+      final changed = await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => FoundItemEditPage(
+            item: item,
+            password: password,
+          ),
+        ),
+      );
+
+      if (changed == true && mounted) {
+        await _loadItems();
+      }
+    } on FirebaseException catch (error) {
+      if (!mounted) {
+        return;
+      }
+
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) {
+          return AlertDialog(
+            title: const Text('알림'),
+            content: Text(
+              error.code == 'permission-denied'
+                  ? '비밀번호를 확인할 권한이 없습니다.'
+                  : '비밀번호 확인 중 문제가 발생했습니다. (${error.code})',
+            ),
+            actions: [
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('확인'),
+              ),
+            ],
+          );
+        },
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF8FAFC),
+      appBar: AppBar(
+        title: const Text(
+          '수정 / 삭제',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        backgroundColor: Colors.white,
+        foregroundColor: const Color(0xFF111827),
+        elevation: 0.5,
+      ),
+      body: _buildBody(),
+    );
+  }
+
+  Widget _buildBody() {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_errorMessage != null) {
+      return _MessageView(
+        icon: Icons.error_outline,
+        title: '목록을 불러오지 못했습니다',
+        message: _errorMessage!,
+        action: OutlinedButton(
+          onPressed: _loadItems,
+          child: const Text('다시 시도'),
+        ),
+      );
+    }
+
+    if (_items.isEmpty) {
+      return const _MessageView(
+        icon: Icons.inventory_2_outlined,
+        title: '등록물이 없습니다',
+        message: '앱에서 등록한 습득물이 없습니다.',
+      );
+    }
+
+    return Column(
+      children: [
+        Container(
+          width: double.infinity,
+          color: Colors.white,
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 14),
+          child: Text(
+            '등록물 ${_items.length}건',
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF111827),
+            ),
+          ),
+        ),
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: _loadItems,
+            child: ListView.separated(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+              itemCount: _items.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 10),
+              itemBuilder: (context, index) {
+                final item = _items[index];
+                return _ManageItemCard(
+                  item: item,
+                  onTap: () => _openItem(item),
+                );
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ManageItemCard extends StatelessWidget {
+  const _ManageItemCard({
+    required this.item,
+    required this.onTap,
+  });
+
+  final LostItem item;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFE5E7EB)),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _thumbnail(),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            item.fdPrdtNm,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF111827),
+                            ),
+                          ),
+                        ),
+                        if (item.prdtClNmMg != null)
+                          _categoryBadge(item.prdtClNmMg!),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    _infoRow(
+                      Icons.calendar_today_outlined,
+                      '습득일 ${_formatDate(item.fdYmd)}',
+                    ),
+                    const SizedBox(height: 4),
+                    _infoRow(Icons.location_on_outlined, _locationText),
+                    if (item.fndDescription != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        item.fndDescription!,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xFF6B7280),
+                          height: 1.35,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: 4),
+              const Icon(
+                Icons.chevron_right,
+                color: Color(0xFF9CA3AF),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String get _locationText {
+    String clean(String? value) =>
+        (value ?? '').trim().replaceAll(RegExp(r'\s+'), ' ');
+    final region = [item.sido, item.sigungu, item.eupmyeondong]
+        .map(clean).where((part) => part.isNotEmpty).join(' ');
+    final place = clean(item.fndPlace);
+    if (region.isEmpty) return place.isEmpty ? '지역 정보 없음' : place;
+    if (place.isEmpty || region == place || region.startsWith('$place ')) {
+      return region;
+    }
+    if (place.startsWith('$region ')) return place;
+    // Remove the region prefix shared by a longer address or storage place.
+    final regionParts = region.split(' ');
+    final placeParts = place.split(' ');
+    var shared = 0;
+    while (shared < regionParts.length && shared < placeParts.length &&
+        regionParts[shared] == placeParts[shared]) {
+      shared++;
+    }
+    return [region, placeParts.skip(shared).join(' ')]
+        .where((part) => part.isNotEmpty).join(' ');
+  }
+
+  String _formatDate(DateTime? date) {
+    if (date == null) return '날짜 없음';
+    final month = date.month.toString().padLeft(2, '0');
+    final day = date.day.toString().padLeft(2, '0');
+    return '${date.year}-$month-$day';
+  }
+
+  Widget _thumbnail() {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        width: 76,
+        height: 76,
+        color: const Color(0xFFEAF2FF),
+        child: item.fdFilePathImg == null
+            ? const Icon(
+                Icons.inventory_2_outlined,
+                color: Color(0xFF2563EB),
+                size: 32,
+              )
+            : Image.network(
+                item.fdFilePathImg!,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => const Icon(
+                  Icons.broken_image_outlined,
+                  color: Color(0xFF9CA3AF),
+                ),
+              ),
+      ),
+    );
+  }
+
+  Widget _categoryBadge(String category) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF3F4F6),
+        borderRadius: BorderRadius.circular(99),
+      ),
+      child: Text(
+        category,
+        style: const TextStyle(
+          fontSize: 12,
+          color: Color(0xFF374151),
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
+  Widget _infoRow(IconData icon, String text) {
+    return Row(
+      children: [
+        Icon(icon, size: 15, color: const Color(0xFF6B7280)),
+        const SizedBox(width: 5),
+        Expanded(
+          child: Text(
+            text,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Color(0xFF6B7280),
+              fontSize: 13,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _MessageView extends StatelessWidget {
+  const _MessageView({
+    required this.icon,
+    required this.title,
+    required this.message,
+    this.action,
+  });
+
+  final IconData icon;
+  final String title;
+  final String message;
+  final Widget? action;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 56, color: const Color(0xFF9CA3AF)),
+            const SizedBox(height: 14),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF111827),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Color(0xFF6B7280)),
+            ),
+            if (action != null) ...[
+              const SizedBox(height: 16),
+              action!,
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
