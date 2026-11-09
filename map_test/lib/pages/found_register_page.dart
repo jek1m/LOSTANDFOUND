@@ -622,7 +622,7 @@ class _ConfirmStep extends StatelessWidget {
           const _FieldLabel('\ub4f1\ub85d\ub41c \uc0ac\uc9c4'),
           _ImageUploadCard(
             image: image,
-            size: 178,
+            size: 220,
             compact: true,
             enabled: false,
             onTap: () {},
@@ -1988,7 +1988,10 @@ class _ImageUploadCard extends StatelessWidget {
         clipBehavior: Clip.antiAlias,
         child: image == null
             ? const _CameraAddPlaceholder()
-            : _PickedImagePreview(image: image!),
+            : _PickedImagePreview(
+                image: image!,
+                fit: compact ? BoxFit.contain : BoxFit.cover,
+              ),
       ),
     );
   }
@@ -2028,9 +2031,10 @@ class _CameraAddPlaceholder extends StatelessWidget {
 }
 
 class _PickedImagePreview extends StatelessWidget {
-  const _PickedImagePreview({required this.image});
+  const _PickedImagePreview({required this.image, this.fit = BoxFit.cover});
 
   final XFile image;
+  final BoxFit fit;
 
   @override
   Widget build(BuildContext context) {
@@ -2040,7 +2044,7 @@ class _PickedImagePreview extends StatelessWidget {
         if (snapshot.hasData) {
           return Image.memory(
             snapshot.data!,
-            fit: BoxFit.cover,
+            fit: fit,
             width: double.infinity,
             height: double.infinity,
           );
